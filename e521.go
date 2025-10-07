@@ -503,7 +503,7 @@ func (pub *PublicKey) Verify(hash []byte, r, s *big.Int) bool {
 	u1Gx, u1Gy := curve.ScalarBaseMult(u1.Bytes())
 	u2Qx, u2Qy := curve.ScalarMult(pub.X, pub.Y, u2.Bytes())
 	
-	Rx, Ry := curve.Add(u1Gx, u1Gy, u2Qx, u2Qy)
+	Rx, _ := curve.Add(u1Gx, u1Gy, u2Qx, u2Qy)
 	
 	if Rx == nil {
 		return false
