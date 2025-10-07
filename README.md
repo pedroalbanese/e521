@@ -1,12 +1,11 @@
-# E-521
+# E-521 🇧🇷
 [![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](https://github.com/pedroalbanese/e521/blob/master/LICENSE.md) 
 [![GoDoc](https://godoc.org/github.com/pedroalbanese/e521?status.png)](http://godoc.org/github.com/pedroalbanese/e521)
 [![Go Report Card](https://goreportcard.com/badge/github.com/pedroalbanese/e521)](https://goreportcard.com/report/github.com/pedroalbanese/e521)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/pedroalbanese/e521)](https://github.com/pedroalbanese/e521/releases)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17290171-blue.svg)](https://doi.org/10.5281/zenodo.17290171)
-Edwards Curve E-521 
 
-#### 🇧🇷 ITI DOC-ICP-01.01 — Brazilian Cryptographic Standards for Public-Key Algorithms  
+#### ITI DOC-ICP-01.01 — Brazilian Cryptographic Standards for Public-Key Algorithms  
 Brazil's national public key cryptographic standards are defined in the **DOC-ICP-01.01**, issued by the **Instituto Nacional de Tecnologia da Informação (ITI)** under the **ICP-Brasil** framework. This standard mandates the use of internationally recognized and security-reviewed asymmetric algorithms, including:
 
 - **ECC over Curve E-521**, defined as a high-security elliptic curve consistent with 512-bit security strength, considered for future-safe digital signatures and key agreement mechanisms.
