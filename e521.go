@@ -3,6 +3,7 @@ package e521
 import (
 	"crypto/rand"
 	"crypto/sha512"
+	"crypto/subtle"
 	"encoding/asn1"
 	"errors"
 	"io"
@@ -548,7 +549,32 @@ func (pub *PublicKey) VerifyASN1(message, sig []byte) bool {
 	rhAx, rhAy := curve.Add(Rx, Ry, hAx, hAy)
 	
 	// Comparar s * G com R + h * A
-	return sGx.Cmp(rhAx) == 0 && sGy.Cmp(rhAy) == 0
+    return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
+}
+
+// constantTimeEqual compara dois big.Int em tempo constante
+func constantTimeEqual(a, b *big.Int) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	
+	aBytes := a.Bytes()
+	bBytes := b.Bytes()
+	
+	// Garantir que ambos tenham o mesmo tamanho
+	maxLen := len(aBytes)
+	if len(bBytes) > maxLen {
+		maxLen = len(bBytes)
+	}
+	
+	aPadded := make([]byte, maxLen)
+	bPadded := make([]byte, maxLen)
+	
+	copy(aPadded[maxLen-len(aBytes):], aBytes)
+	copy(bPadded[maxLen-len(bBytes):], bBytes)
+	
+	// Usar subtle.ConstantTimeCompare para comparação em tempo constante
+	return subtle.ConstantTimeCompare(aPadded, bPadded) == 1
 }
 
 // GetPublic retorna a chave pública associada
