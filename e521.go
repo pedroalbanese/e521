@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/asn1"
-	"errors"
 	"io"
 	"math/big"
 	"sync"
@@ -202,8 +201,6 @@ func GenerateKey() (*PrivateKey, error) {
 
 // GenerateKeyWithReader gera um par de chaves E-521 EdDSA com um leitor específico
 func GenerateKeyWithReader(reader io.Reader) (*PrivateKey, error) {
-	curve := E521()
-	
 	// Gerar seed aleatória (64 bytes para Ed521)
 	seed := make([]byte, 64)
 	if reader == nil {
