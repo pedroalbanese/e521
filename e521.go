@@ -202,7 +202,7 @@ func GenerateKeyWithReader(reader io.Reader) (*PrivateKey, error) {
 	curve := E521()
 	
 	// Gerar chave privada aleatória
-	privateKey, err := rand.Int(reader, curve.N)
+	privateKey, err := randInt(reader, curve.N)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +220,30 @@ func GenerateKeyWithReader(reader io.Reader) (*PrivateKey, error) {
 		},
 		D: privateKey,
 	}, nil
+}
+
+// randInt gera um número aleatório usando o reader fornecido
+func randInt(reader io.Reader, max *big.Int) (*big.Int, error) {
+	if reader == nil {
+		reader = rand.Reader
+	}
+	
+	// Calcular o número de bytes necessário
+	byteLen := (max.BitLen() + 7) / 8
+	buf := make([]byte, byteLen)
+	
+	for {
+		_, err := io.ReadFull(reader, buf)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Garantir que o número é menor que max
+		num := new(big.Int).SetBytes(buf)
+		if num.Cmp(max) < 0 {
+			return num, nil
+		}
+	}
 }
 
 // Marshal serializa um ponto no formato comprimido
@@ -448,7 +472,7 @@ func (priv *PrivateKey) Sign(hash []byte) (*big.Int, *big.Int, error) {
 	for {
 		// Gerar k aleatório
 		var err error
-		k, err = rand.Int(rand.Reader, N)
+		k, err = randInt(nil, N)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -511,7 +535,7 @@ func (priv *PrivateKey) SignASN1WithReader(rand io.Reader, hash []byte) ([]byte,
 	for {
 		// Gerar k aleatório com o leitor fornecido
 		var err error
-		k, err = rand.Int(rand, N)
+		k, err = randInt(rand, N)
 		if err != nil {
 			return nil, err
 		}
