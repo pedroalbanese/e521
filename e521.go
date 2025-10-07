@@ -609,24 +609,32 @@ type EdDSASignatureCompressedASN1 struct {
 
 // SignASN1Compressed assina e retorna ASN.1 comprimido (~140 bytes)
 func (priv *PrivateKey) SignASN1Compressed(message []byte) ([]byte, error) {
-	sig, err := priv.SignCompressed(message)
+	// Primeiro, obter a assinatura binária comprimida
+	compressedSig, err := priv.SignCompressed(message)
 	if err != nil {
 		return nil, err
 	}
 	
-	// Dividir a assinatura comprimida
-	curveSize := (priv.Curve.BitSize + 7) / 8
-	RY := big.NewInt(int64(sig.RY)) // Converter byte para *big.Int
-	RX := sig.RX
-	S := new(big.Int).SetBytes(sig.S)
+	curve := priv.Curve
+	curveSize := (curve.BitSize + 7) / 8
 	
-	// Criar estrutura ASN.1 comprimida
-	signature := EdDSASignatureCompressedASN1{
-		RY: RY,
-		RX: RX,
-		S:  S,
+	// Extrair componentes da assinatura binária
+	if len(compressedSig) != 1+curveSize+curveSize {
+		return nil, errors.New("tamanho de assinatura comprimida inválido")
 	}
 	
+	signY := compressedSig[0]
+	RxBytes := compressedSig[1 : 1+curveSize]
+	SBytes := compressedSig[1+curveSize:]
+	
+	// Converter para estrutura ASN.1
+	signature := EdDSASignatureCompressedASN1{
+		RY: big.NewInt(int64(signY)), // Converter byte para *big.Int
+		RX: RxBytes,
+		S:  new(big.Int).SetBytes(SBytes),
+	}
+	
+	// Marshal para ASN.1
 	return asn1.Marshal(signature)
 }
 
@@ -639,31 +647,43 @@ func (pub *PublicKey) VerifyASN1Compressed(message, sig []byte) bool {
 		return false
 	}
 	
+	// Verificar campos obrigatórios
+	if signature.RY == nil || signature.RX == nil || signature.S == nil {
+		return false
+	}
+	
 	// Converter RY de *big.Int para byte
-	var RY byte
-	if signature.RY != nil && signature.RY.BitLen() <= 8 {
-		RY = byte(signature.RY.Int64())
+	var signY byte
+	if signature.RY.BitLen() <= 8 {
+		signY = byte(signature.RY.Int64())
 	} else {
 		return false
 	}
 	
+	curve := pub.Curve
+	curveSize := (curve.BitSize + 7) / 8
+	
+	// Verificar tamanhos
+	if len(signature.RX) != curveSize {
+		return false
+	}
+	
 	// Reconstruir assinatura binária comprimida
-	curveSize := (pub.Curve.BitSize + 7) / 8
 	compressedSig := make([]byte, 1+curveSize+curveSize)
-	compressedSig[0] = RY
+	compressedSig[0] = signY
 	copy(compressedSig[1:1+curveSize], signature.RX)
 	
-	sBytes := signature.S.Bytes()
-	if len(sBytes) < curveSize {
-		padding := make([]byte, curveSize-len(sBytes))
-		sBytes = append(padding, sBytes...)
+	SBytes := signature.S.Bytes()
+	if len(SBytes) < curveSize {
+		padding := make([]byte, curveSize-len(SBytes))
+		SBytes = append(padding, SBytes...)
 	}
-	copy(compressedSig[1+curveSize:], sBytes)
+	copy(compressedSig[1+curveSize:], SBytes)
 	
 	return pub.VerifyCompressed(message, compressedSig)
 }
 
-// SignCompressed assina uma mensagem e retorna assinatura comprimida (132-133 bytes)
+// SignCompressed assina uma mensagem e retorna assinatura binária comprimida (133 bytes)
 func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
 	curve := priv.Curve
 	
@@ -729,15 +749,15 @@ func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
 	}
 	
 	// Criar assinatura comprimida: [signY][Rx][s]
-	signature := make([]byte, 1+len(RxBytes)+len(sBytes))
+	signature := make([]byte, 1+curveSize+curveSize)
 	signature[0] = signY
-	copy(signature[1:1+len(RxBytes)], RxBytes)
-	copy(signature[1+len(RxBytes):], sBytes)
+	copy(signature[1:1+curveSize], RxBytes)
+	copy(signature[1+curveSize:], sBytes)
 	
 	return signature, nil
 }
 
-// VerifyCompressed verifica uma assinatura EdDSA comprimida
+// VerifyCompressed verifica uma assinatura EdDSA comprimida (formato binário)
 func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	curve := pub.Curve
 	curveSize := (curve.BitSize + 7) / 8
@@ -797,70 +817,4 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	
 	// Comparar s * G com R + h * A
 	return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
-}
-
-// CompressPoint comprime um ponto Edwards para formato (sinal_y, x)
-func (curve *Curve) CompressPoint(x, y *big.Int) (byte, []byte) {
-	curveSize := (curve.BitSize + 7) / 8
-	
-	// Coordenada x
-	xBytes := x.Bytes()
-	if len(xBytes) < curveSize {
-		padding := make([]byte, curveSize-len(xBytes))
-		xBytes = append(padding, xBytes...)
-	}
-	
-	// O bit de sinal é o bit menos significativo de y
-	yBytes := y.Bytes()
-	if len(yBytes) < curveSize {
-		padding := make([]byte, curveSize-len(yBytes))
-		yBytes = append(padding, yBytes...)
-	}
-	signY := yBytes[len(yBytes)-1] & 1
-	
-	return signY, xBytes
-}
-
-// DecompressPoint descomprime um ponto do formato (sinal_y, x)
-func (curve *Curve) DecompressPoint(signY byte, xBytes []byte) (*big.Int, *big.Int) {
-	x := new(big.Int).SetBytes(xBytes)
-	
-	// Para curvas de Edwards, precisamos resolver a equação para encontrar y
-	// x² + y² = 1 + d*x²*y²
-	// Podemos reorganizar para: y² = (1 - x²) / (1 - d*x²)
-	
-	x2 := new(big.Int).Mul(x, x)
-	x2.Mod(x2, curve.P)
-	
-	// numerator = 1 - x²
-	numerator := new(big.Int).Sub(big.NewInt(1), x2)
-	numerator.Mod(numerator, curve.P)
-	
-	// denominator = 1 - d*x²
-	dx2 := new(big.Int).Mul(x2, curve.D)
-	dx2.Mod(dx2, curve.P)
-	denominator := new(big.Int).Sub(big.NewInt(1), dx2)
-	denominator.Mod(denominator, curve.P)
-	
-	// y² = numerator / denominator
-	invDenom := new(big.Int).ModInverse(denominator, curve.P)
-	y2 := new(big.Int).Mul(numerator, invDenom)
-	y2.Mod(y2, curve.P)
-	
-	// Calcular raiz quadrada mod p (y = sqrt(y²))
-	y := new(big.Int).ModSqrt(y2, curve.P)
-	
-	if y == nil {
-		return nil, nil
-	}
-	
-	// Escolher o y correto baseado no bit de sinal
-	// Se o bit menos significativo de y não corresponder ao signY, usar -y
-	yBytes := y.Bytes()
-	if len(yBytes) > 0 && (yBytes[len(yBytes)-1] & 1) != signY {
-		y = new(big.Int).Sub(curve.P, y)
-		y.Mod(y, curve.P)
-	}
-	
-	return x, y
 }
