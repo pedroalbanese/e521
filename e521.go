@@ -37,15 +37,10 @@ var (
 	e521H = big.NewInt(4)
 )
 
-// ECDSASignature representa uma assinatura ECDSA no formato ASN.1
-type ECDSASignature struct {
-	R, S *big.Int
-}
-
-// EdDSASignature representa uma assinatura EdDSA
-type EdDSASignature struct {
-	R *Point
-	S *big.Int
+// EdDSASignatureASN1 representa uma assinatura EdDSA no formato ASN.1
+type EdDSASignatureASN1 struct {
+	R []byte   // Ponto R serializado
+	S *big.Int // Escalar S
 }
 
 // Curve representa uma curva elíptica
@@ -63,17 +58,16 @@ type Point struct {
 	X, Y *big.Int
 }
 
-// PublicKey representa uma chave pública E-521
+// PublicKey representa uma chave pública E-521 EdDSA
 type PublicKey struct {
 	Point
 	Curve *Curve
 }
 
-// PrivateKey representa uma chave privada E-521
+// PrivateKey representa uma chave privada E-521 EdDSA
 type PrivateKey struct {
 	PublicKey
-	D     *big.Int    // Escalar privado
-	Seed  []byte      // Seed original (64 bytes para Ed521)
+	D *big.Int // Escalar privado (a)
 }
 
 // pkAlgorithmIdentifier para ASN.1
@@ -207,41 +201,16 @@ func GenerateKey() (*PrivateKey, error) {
 
 // GenerateKeyWithReader gera um par de chaves E-521 EdDSA com um leitor específico
 func GenerateKeyWithReader(reader io.Reader) (*PrivateKey, error) {
-	// Gerar seed aleatória (64 bytes para Ed521)
-	seed := make([]byte, 64)
-	if reader == nil {
-		reader = rand.Reader
-	}
-	_, err := io.ReadFull(reader, seed)
+	curve := E521()
+	
+	// Gerar chave privada aleatória (escalar a)
+	privateKey, err := randInt(reader, curve.N)
 	if err != nil {
 		return nil, err
 	}
 	
-	return DerivePrivateKey(seed)
-}
-
-// DerivePrivateKey deriva uma chave privada EdDSA a partir de uma seed
-func DerivePrivateKey(seed []byte) (*PrivateKey, error) {
-	curve := E521()
-	
-	// Hash da seed usando SHA-512
-	hash := sha512.Sum512(seed)
-	
-	// Primeiros 32 bytes: chave privada escalar (com bits ajustados)
-	privateScalar := make([]byte, 66) // 528 bits para E-521
-	copy(privateScalar, hash[:32])
-	
-	// Ajustes específicos do EdDSA
-	privateScalar[0] &= 248  // Limpar bits baixos
-	privateScalar[31] &= 127 // Limpar bit alto
-	privateScalar[31] |= 64  // Setar bit alto
-	
-	// Converter para big.Int
-	scalarInt := new(big.Int).SetBytes(privateScalar)
-	scalarInt.Mod(scalarInt, curve.N)
-	
 	// Calcular chave pública: A = a * G
-	publicKeyX, publicKeyY := curve.ScalarBaseMult(scalarInt.Bytes())
+	publicKeyX, publicKeyY := curve.ScalarBaseMult(privateKey.Bytes())
 	
 	return &PrivateKey{
 		PublicKey: PublicKey{
@@ -251,8 +220,7 @@ func DerivePrivateKey(seed []byte) (*PrivateKey, error) {
 			},
 			Curve: curve,
 		},
-		D:    scalarInt,
-		Seed: seed,
+		D: privateKey,
 	}, nil
 }
 
@@ -493,17 +461,18 @@ func ECDH(privateKey *PrivateKey, publicKey *PublicKey) ([]byte, error) {
 	return x.Bytes(), nil
 }
 
-// SignEdDSA assina uma mensagem usando PureEdDSA
-func (priv *PrivateKey) SignEdDSA(message []byte) (*EdDSASignature, error) {
+// SignASN1 assina uma mensagem usando PureEdDSA e retorna no formato ASN.1
+func (priv *PrivateKey) SignASN1(message []byte) ([]byte, error) {
 	curve := priv.Curve
 	
 	// Dom: contexto específico do domínio (vazio para PureEdDSA)
 	dom := []byte{}
 	
-	// Calcular r = SHA512(dom(2) || priv[32..64] || message)
+	// Calcular r = SHA512(dom(2) || a || message)
+	// Usamos o escalar privado 'a' diretamente em vez de uma seed
 	h := sha512.New()
 	h.Write(dom)
-	h.Write(priv.Seed[32:]) // Segundo half da seed
+	h.Write(priv.D.Bytes()) // Usar o escalar privado diretamente
 	h.Write(message)
 	rHash := h.Sum(nil)
 	
@@ -513,13 +482,13 @@ func (priv *PrivateKey) SignEdDSA(message []byte) (*EdDSASignature, error) {
 	
 	// Calcular R = r * G
 	Rx, Ry := curve.ScalarBaseMult(r.Bytes())
-	R := &Point{X: Rx, Y: Ry}
+	RBytes := curve.Marshal(Rx, Ry)
 	
 	// Calcular s = r + SHA512(dom(2) || R || A || message) * a mod N
 	h.Reset()
 	h.Write(dom)
-	h.Write(curve.Marshal(R.X, R.Y)) // R no formato não comprimido
-	h.Write(curve.Marshal(priv.X, priv.Y)) // A no formato não comprimido
+	h.Write(RBytes)                       // R
+	h.Write(curve.Marshal(priv.X, priv.Y)) // A (chave pública)
 	h.Write(message)
 	hramHash := h.Sum(nil)
 	
@@ -530,49 +499,41 @@ func (priv *PrivateKey) SignEdDSA(message []byte) (*EdDSASignature, error) {
 	s.Add(s, r)
 	s.Mod(s, curve.N)
 	
-	return &EdDSASignature{
-		R: R,
+	// Criar estrutura ASN.1 para a assinatura
+	signature := EdDSASignatureASN1{
+		R: RBytes,
 		S: s,
-	}, nil
+	}
+	
+	// Marshal para ASN.1
+	return asn1.Marshal(signature)
 }
 
-// SignEdDSAASN1 assina uma mensagem e retorna a assinatura no formato ASN.1
-func (priv *PrivateKey) SignEdDSAASN1(message []byte) ([]byte, error) {
-	sig, err := priv.SignEdDSA(message)
+// VerifyASN1 verifica uma assinatura EdDSA no formato ASN.1
+func (pub *PublicKey) VerifyASN1(message, sig []byte) bool {
+	// Parse da assinatura ASN.1
+	var signature EdDSASignatureASN1
+	_, err := asn1.Unmarshal(sig, &signature)
 	if err != nil {
-		return nil, err
+		return false
 	}
 	
-	// Converter assinatura para formato ASN.1
-	signatureASN1 := struct {
-		R []byte
-		S *big.Int
-	}{
-		R: priv.Curve.Marshal(sig.R.X, sig.R.Y),
-		S: sig.S,
-	}
-	
-	return asn1.Marshal(signatureASN1)
-}
-
-// SignASN1 - compatibilidade com código existente (usa EdDSA internamente)
-func (priv *PrivateKey) SignASN1(hash []byte) ([]byte, error) {
-	// Para compatibilidade, tratamos o hash como a mensagem
-	return priv.SignEdDSAASN1(hash)
-}
-
-// VerifyEdDSA verifica uma assinatura EdDSA
-func (pub *PublicKey) VerifyEdDSA(message []byte, sig *EdDSASignature) bool {
 	curve := pub.Curve
 	
 	// Dom: contexto específico do domínio (vazio para PureEdDSA)
 	dom := []byte{}
 	
+	// Recuperar ponto R
+	Rx, Ry := curve.Unmarshal(signature.R)
+	if Rx == nil || Ry == nil {
+		return false
+	}
+	
 	// Calcular h = SHA512(dom(2) || R || A || message)
 	h := sha512.New()
 	h.Write(dom)
-	h.Write(curve.Marshal(sig.R.X, sig.R.Y)) // R comprimido
-	h.Write(curve.Marshal(pub.X, pub.Y))     // A comprimido
+	h.Write(signature.R)                  // R
+	h.Write(curve.Marshal(pub.X, pub.Y)) // A (chave pública)
 	h.Write(message)
 	hramHash := h.Sum(nil)
 	
@@ -580,47 +541,14 @@ func (pub *PublicKey) VerifyEdDSA(message []byte, sig *EdDSASignature) bool {
 	hram.Mod(hram, curve.N)
 	
 	// Verificar s * G == R + h * A
-	sGx, sGy := curve.ScalarBaseMult(sig.S.Bytes())
+	sGx, sGy := curve.ScalarBaseMult(signature.S.Bytes())
 	hAx, hAy := curve.ScalarMult(pub.X, pub.Y, hram.Bytes())
 	
 	// Calcular R + h * A
-	rhAx, rhAy := curve.Add(sig.R.X, sig.R.Y, hAx, hAy)
+	rhAx, rhAy := curve.Add(Rx, Ry, hAx, hAy)
 	
 	// Comparar s * G com R + h * A
 	return sGx.Cmp(rhAx) == 0 && sGy.Cmp(rhAy) == 0
-}
-
-// VerifyEdDSAASN1 verifica uma assinatura EdDSA no formato ASN.1
-func (pub *PublicKey) VerifyEdDSAASN1(message, sigASN1 []byte) bool {
-	// Parse da assinatura ASN.1
-	var signature struct {
-		R []byte
-		S *big.Int
-	}
-	
-	_, err := asn1.Unmarshal(sigASN1, &signature)
-	if err != nil {
-		return false
-	}
-	
-	// Recuperar ponto R
-	Rx, Ry := pub.Curve.Unmarshal(signature.R)
-	if Rx == nil || Ry == nil {
-		return false
-	}
-	
-	sig := &EdDSASignature{
-		R: &Point{X: Rx, Y: Ry},
-		S: signature.S,
-	}
-	
-	return pub.VerifyEdDSA(message, sig)
-}
-
-// VerifyASN1 - compatibilidade com código existente (usa EdDSA internamente)
-func (pub *PublicKey) VerifyASN1(hash, sig []byte) bool {
-	// Para compatibilidade, tratamos o hash como a mensagem
-	return pub.VerifyEdDSAASN1(hash, sig)
 }
 
 // GetPublic retorna a chave pública associada
@@ -643,15 +571,4 @@ func NewPublicKey(x, y *big.Int) *PublicKey {
 		Point: Point{X: x, Y: y},
 		Curve: curve,
 	}
-}
-
-// ParseSignature analisa uma assinatura ASN.1 e retorna os componentes R e S
-func ParseSignature(sig []byte) (*big.Int, *big.Int, error) {
-	var signature ECDSASignature
-	_, err := asn1.Unmarshal(sig, &signature)
-	if err != nil {
-		return nil, nil, err
-	}
-	
-	return signature.R, signature.S, nil
 }
