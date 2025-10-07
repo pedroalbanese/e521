@@ -1,4 +1,9 @@
 # E-521
+[![ISC License](http://img.shields.io/badge/license-ISC-blue.svg)](https://github.com/pedroalbanese/e521/blob/master/LICENSE.md) 
+[![GoDoc](https://godoc.org/github.com/pedroalbanese/e521?status.png)](http://godoc.org/github.com/pedroalbanese/e521)
+[![Go Report Card](https://goreportcard.com/badge/github.com/pedroalbanese/e521)](https://goreportcard.com/report/github.com/pedroalbanese/e521)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/pedroalbanese/e521)](https://github.com/pedroalbanese/e521/releases)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17290171-blue.svg)](https://doi.org/10.5281/zenodo.17290171)
 Edwards Curve E-521 
 
 #### 🇧🇷 ITI DOC-ICP-01.01 — Brazilian Cryptographic Standards for Public-Key Algorithms  
