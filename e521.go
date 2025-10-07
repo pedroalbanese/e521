@@ -36,6 +36,11 @@ var (
 	e521H = big.NewInt(4)
 )
 
+// ECDSASignature representa uma assinatura ECDSA no formato ASN.1
+type ECDSASignature struct {
+	R, S *big.Int
+}
+
 // Curve representa uma curva elíptica
 type Curve struct {
 	Name    string
@@ -476,6 +481,76 @@ func (priv *PrivateKey) Sign(hash []byte) (*big.Int, *big.Int, error) {
 	return r, s, nil
 }
 
+// SignASN1 assina uma mensagem e retorna a assinatura no formato ASN.1
+func (priv *PrivateKey) SignASN1(hash []byte) ([]byte, error) {
+	r, s, err := priv.Sign(hash)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Criar estrutura ASN.1 para a assinatura
+	signature := ECDSASignature{
+		R: r,
+		S: s,
+	}
+	
+	// Marshal para ASN.1
+	return asn1.Marshal(signature)
+}
+
+// SignASN1WithReader assina uma mensagem com um leitor específico para randomness
+func (priv *PrivateKey) SignASN1WithReader(rand io.Reader, hash []byte) ([]byte, error) {
+	curve := priv.Curve
+	N := curve.N
+	
+	hashInt := new(big.Int).SetBytes(hash)
+	hashInt.Mod(hashInt, N)
+	
+	var k, r, s *big.Int
+	
+	for {
+		// Gerar k aleatório com o leitor fornecido
+		var err error
+		k, err = rand.Int(rand, N)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Calcular R = k * G
+		Rx, _ := curve.ScalarBaseMult(k.Bytes())
+		r = new(big.Int).Set(Rx)
+		r.Mod(r, N)
+		
+		if r.Sign() == 0 {
+			continue
+		}
+		
+		// Calcular s = k⁻¹ * (hash + r * privateKey) mod N
+		kInv := new(big.Int).ModInverse(k, N)
+		rPriv := new(big.Int).Mul(r, priv.D)
+		rPriv.Mod(rPriv, N)
+		
+		sum := new(big.Int).Add(hashInt, rPriv)
+		sum.Mod(sum, N)
+		
+		s = new(big.Int).Mul(kInv, sum)
+		s.Mod(s, N)
+		
+		if s.Sign() != 0 {
+			break
+		}
+	}
+	
+	// Criar estrutura ASN.1 para a assinatura
+	signature := ECDSASignature{
+		R: r,
+		S: s,
+	}
+	
+	// Marshal para ASN.1
+	return asn1.Marshal(signature)
+}
+
 // Verify verifica uma assinatura ECDSA
 func (pub *PublicKey) Verify(hash []byte, r, s *big.Int) bool {
 	curve := pub.Curve
@@ -514,6 +589,19 @@ func (pub *PublicKey) Verify(hash []byte, r, s *big.Int) bool {
 	return RxMod.Cmp(r) == 0
 }
 
+// VerifyASN1 verifica uma assinatura no formato ASN.1
+func (pub *PublicKey) VerifyASN1(hash, sig []byte) bool {
+	// Parse da assinatura ASN.1
+	var signature ECDSASignature
+	_, err := asn1.Unmarshal(sig, &signature)
+	if err != nil {
+		return false
+	}
+	
+	// Verificar a assinatura
+	return pub.Verify(hash, signature.R, signature.S)
+}
+
 // GetPublic retorna a chave pública associada
 func (priv *PrivateKey) GetPublic() *PublicKey {
 	return &priv.PublicKey
@@ -534,4 +622,15 @@ func NewPublicKey(x, y *big.Int) *PublicKey {
 		Point: Point{X: x, Y: y},
 		Curve: curve,
 	}
+}
+
+// ParseSignature analisa uma assinatura ASN.1 e retorna os componentes R e S
+func ParseSignature(sig []byte) (*big.Int, *big.Int, error) {
+	var signature ECDSASignature
+	_, err := asn1.Unmarshal(sig, &signature)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	return signature.R, signature.S, nil
 }
