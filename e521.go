@@ -2,13 +2,14 @@ package e521
 
 import (
 	"crypto/rand"
-	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/asn1"
 	"errors"
 	"io"
 	"math/big"
 	"sync"
+	
+	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -79,7 +80,7 @@ type pkAlgorithmIdentifier struct {
 
 func initE521() {
 	e521Curve = &Curve{
-		Name:    "E-521 EdDSA",
+		Name:    "E-521",
 		P:       new(big.Int).Set(e521P),
 		N:       new(big.Int).Set(e521N),
 		D:       new(big.Int).Set(e521D),
@@ -469,9 +470,9 @@ func (priv *PrivateKey) SignASN1(message []byte) ([]byte, error) {
 	// Dom: contexto específico do domínio (vazio para PureEdDSA)
 	dom := []byte{}
 	
-	// Calcular r = SHA512(dom(2) || a || message)
+	// Calcular r = SHA3-512(dom(2) || a || message)
 	// Usamos o escalar privado 'a' diretamente em vez de uma seed
-	h := sha512.New()
+	h := sha3.New512()
 	h.Write(dom)
 	h.Write(priv.D.Bytes()) // Usar o escalar privado diretamente
 	h.Write(message)
@@ -485,7 +486,7 @@ func (priv *PrivateKey) SignASN1(message []byte) ([]byte, error) {
 	Rx, Ry := curve.ScalarBaseMult(r.Bytes())
 	RBytes := curve.Marshal(Rx, Ry)
 	
-	// Calcular s = r + SHA512(dom(2) || R || A || message) * a mod N
+	// Calcular s = r + SHA3-512(dom(2) || R || A || message) * a mod N
 	h.Reset()
 	h.Write(dom)
 	h.Write(RBytes)                       // R
@@ -530,8 +531,8 @@ func (pub *PublicKey) VerifyASN1(message, sig []byte) bool {
 		return false
 	}
 	
-	// Calcular h = SHA512(dom(2) || R || A || message)
-	h := sha512.New()
+	// Calcular h = SHA3-512(dom(2) || R || A || message)
+	h := sha3.New512()
 	h.Write(dom)
 	h.Write(signature.R)                  // R
 	h.Write(curve.Marshal(pub.X, pub.Y)) // A (chave pública)
