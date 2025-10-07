@@ -11,7 +11,7 @@ import (
 
 var (
 	// OID para identificação da curva E-521
-	oidE521 = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 0, 7}
+	oidE521 = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 1, 521}
 )
 
 var initonce sync.Once
