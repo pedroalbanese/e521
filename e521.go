@@ -818,3 +818,71 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	// Comparar s * G com R + h * A
 	return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
 }
+
+// Adicione estas funções à struct Curve no arquivo e521.go
+
+// CompressPoint comprime um ponto Edwards para formato (sinal_y, x)
+func (curve *Curve) CompressPoint(x, y *big.Int) (byte, []byte) {
+	curveSize := (curve.BitSize + 7) / 8
+	
+	// Coordenada x
+	xBytes := x.Bytes()
+	if len(xBytes) < curveSize {
+		padding := make([]byte, curveSize-len(xBytes))
+		xBytes = append(padding, xBytes...)
+	}
+	
+	// O bit de sinal é o bit menos significativo de y
+	yBytes := y.Bytes()
+	if len(yBytes) < curveSize {
+		padding := make([]byte, curveSize-len(yBytes))
+		yBytes = append(padding, yBytes...)
+	}
+	signY := yBytes[len(yBytes)-1] & 1
+	
+	return signY, xBytes
+}
+
+// DecompressPoint descomprime um ponto do formato (sinal_y, x)
+func (curve *Curve) DecompressPoint(signY byte, xBytes []byte) (*big.Int, *big.Int) {
+	x := new(big.Int).SetBytes(xBytes)
+	
+	// Para curvas de Edwards, precisamos resolver a equação para encontrar y
+	// x² + y² = 1 + d*x²*y²
+	// Podemos reorganizar para: y² = (1 - x²) / (1 - d*x²)
+	
+	x2 := new(big.Int).Mul(x, x)
+	x2.Mod(x2, curve.P)
+	
+	// numerator = 1 - x²
+	numerator := new(big.Int).Sub(big.NewInt(1), x2)
+	numerator.Mod(numerator, curve.P)
+	
+	// denominator = 1 - d*x²
+	dx2 := new(big.Int).Mul(x2, curve.D)
+	dx2.Mod(dx2, curve.P)
+	denominator := new(big.Int).Sub(big.NewInt(1), dx2)
+	denominator.Mod(denominator, curve.P)
+	
+	// y² = numerator / denominator
+	invDenom := new(big.Int).ModInverse(denominator, curve.P)
+	y2 := new(big.Int).Mul(numerator, invDenom)
+	y2.Mod(y2, curve.P)
+	
+	// Calcular raiz quadrada mod p (y = sqrt(y²))
+	y := new(big.Int).ModSqrt(y2, curve.P)
+	
+	if y == nil {
+		return nil, nil
+	}
+	
+	// Escolher o y correto baseado no bit de sinal
+	// Se o bit menos significativo de y não corresponder ao signY, usar -y
+	yBytes := y.Bytes()
+	if len(yBytes) > 0 && (yBytes[len(yBytes)-1] & 1) != signY {
+		y = new(big.Int).Sub(curve.P, y)
+		y.Mod(y, curve.P)
+	}
+	
+	return x, y
+}
