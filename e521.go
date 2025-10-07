@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/asn1"
+	"errors"
 	"io"
 	"math/big"
 	"sync"
@@ -11,7 +12,7 @@ import (
 
 var (
 	// OID para identificação da curva E-521 EdDSA
-	oidE521EdDSA = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 1, 521}
+	oidE521EdDSA = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 0, 8}
 )
 
 var initonce sync.Once
@@ -36,6 +37,11 @@ var (
 	e521H = big.NewInt(4)
 )
 
+// ECDSASignature representa uma assinatura ECDSA no formato ASN.1
+type ECDSASignature struct {
+	R, S *big.Int
+}
+
 // EdDSASignature representa uma assinatura EdDSA
 type EdDSASignature struct {
 	R *Point
@@ -57,17 +63,17 @@ type Point struct {
 	X, Y *big.Int
 }
 
-// PublicKey representa uma chave pública E-521 EdDSA
+// PublicKey representa uma chave pública E-521
 type PublicKey struct {
 	Point
 	Curve *Curve
 }
 
-// PrivateKey representa uma chave privada E-521 EdDSA
+// PrivateKey representa uma chave privada E-521
 type PrivateKey struct {
 	PublicKey
 	D     *big.Int    // Escalar privado
-	Seed  []byte      // Seed original (32 bytes para Ed25519, 64 bytes para Ed521)
+	Seed  []byte      // Seed original (64 bytes para Ed521)
 }
 
 // pkAlgorithmIdentifier para ASN.1
@@ -274,106 +280,217 @@ func randInt(reader io.Reader, max *big.Int) (*big.Int, error) {
 	}
 }
 
-// Marshal serializa um ponto no formato comprimido
+// Marshal serializa um ponto no formato não comprimido
 func (curve *Curve) Marshal(x, y *big.Int) []byte {
 	byteLen := (curve.BitSize + 7) / 8
-	ret := make([]byte, 1+byteLen)
+	ret := make([]byte, 1+2*byteLen)
+	ret[0] = 4 // ponto não comprimido
 	
-	// Formato comprimido: usar apenas a coordenada Y + bit de sinal de X
+	xBytes := x.Bytes()
 	yBytes := y.Bytes()
 	
-	// Copiar Y (little-endian)
-	for i, j := 0, len(yBytes)-1; i < len(yBytes); i, j = i+1, j-1 {
-		ret[1+i] = yBytes[j]
-	}
-	
-	// Bit mais significativo indica o sinal de X
-	if x.Bit(0) == 1 {
-		ret[0] = 0x03
-	} else {
-		ret[0] = 0x02
-	}
+	copy(ret[1+byteLen-len(xBytes):1+byteLen], xBytes)
+	copy(ret[1+2*byteLen-len(yBytes):], yBytes)
 	
 	return ret
 }
 
-// Unmarshal desserializa um ponto do formato comprimido
+// Unmarshal desserializa um ponto do formato não comprimido
 func (curve *Curve) Unmarshal(data []byte) (*big.Int, *big.Int) {
 	if len(data) == 0 {
 		return nil, nil
 	}
 	
 	byteLen := (curve.BitSize + 7) / 8
-	if len(data) != 1+byteLen {
+	if len(data) != 1+2*byteLen {
 		return nil, nil
 	}
 	
-	// Extrair coordenada Y (little-endian)
-	yBytes := make([]byte, byteLen)
-	copy(yBytes, data[1:])
-	// Converter para big-endian
-	for i, j := 0, len(yBytes)-1; i < j; i, j = i+1, j-1 {
-		yBytes[i], yBytes[j] = yBytes[j], yBytes[i]
-	}
-	y := new(big.Int).SetBytes(yBytes)
-	
-	// Recuperar X a partir de Y e do bit de sinal
-	return curve.RecoverX(y, data[0] == 0x03)
-}
-
-// RecoverX recupera a coordenada X a partir de Y e do bit de sinal
-func (curve *Curve) RecoverX(y *big.Int, sign bool) (*big.Int, *big.Int) {
-	// Resolver a equação da curva: x² = (1 - y²) / (1 + d*y²) mod p
-	
-	y2 := new(big.Int).Mul(y, y)
-	y2.Mod(y2, curve.P)
-	
-	// numerator = 1 - y²
-	numerator := new(big.Int).Sub(big.NewInt(1), y2)
-	numerator.Mod(numerator, curve.P)
-	
-	// denominator = 1 + d*y²
-	denominator := new(big.Int).Mul(curve.D, y2)
-	denominator.Add(denominator, big.NewInt(1))
-	denominator.Mod(denominator, curve.P)
-	
-	// x² = numerator / denominator
-	invDenom := new(big.Int).ModInverse(denominator, curve.P)
-	x2 := new(big.Int).Mul(numerator, invDenom)
-	x2.Mod(x2, curve.P)
-	
-	// Calcular raiz quadrada mod p
-	x := curve.Sqrt(x2)
-	if x == nil {
+	if data[0] != 4 { // apenas suporte a formato não comprimido
 		return nil, nil
 	}
 	
-	// Ajustar o sinal conforme necessário
-	if sign != (x.Bit(0) == 1) {
-		x.Sub(curve.P, x)
+	x := new(big.Int).SetBytes(data[1 : 1+byteLen])
+	y := new(big.Int).SetBytes(data[1+byteLen:])
+	
+	if !curve.IsOnCurve(x, y) {
+		return nil, nil
 	}
 	
 	return x, y
 }
 
-// Sqrt calcula a raiz quadrada modular
-func (curve *Curve) Sqrt(a *big.Int) *big.Int {
-	// Para p ≡ 3 mod 4, sqrt(a) = a^((p+1)/4) mod p
-	// p = 2^521 - 1 ≡ 3 mod 4
-	
-	exp := new(big.Int).Add(curve.P, big.NewInt(1))
-	exp.Div(exp, big.NewInt(4))
-	
-	result := new(big.Int).Exp(a, exp, curve.P)
-	
-	// Verificar se é realmente uma raiz quadrada
-	check := new(big.Int).Mul(result, result)
-	check.Mod(check, curve.P)
-	
-	if check.Cmp(a) == 0 {
-		return result
+// MarshalPKCS8PublicKey serializa uma chave pública no formato PKCS#8
+func (pub *PublicKey) MarshalPKCS8PublicKey() ([]byte, error) {
+	if pub.Curve != E521() {
+		return nil, errors.New("unsupported curve")
 	}
-	return nil
+	
+	// Marshal das coordenadas do ponto
+	derBytes := pub.Curve.Marshal(pub.X, pub.Y)
+	
+	// Criar estrutura SubjectPublicKeyInfo
+	subjectPublicKeyInfo := struct {
+		Algorithm pkAlgorithmIdentifier
+		PublicKey asn1.BitString
+	}{
+		Algorithm: pkAlgorithmIdentifier{
+			Algorithm:  oidE521EdDSA,
+			Parameters: asn1.RawValue{Tag: asn1.TagOID},
+		},
+		PublicKey: asn1.BitString{Bytes: derBytes, BitLength: len(derBytes) * 8},
+	}
+	
+	// Marshal da estrutura
+	return asn1.Marshal(subjectPublicKeyInfo)
+}
+
+// ParsePublicKey analisa uma chave pública no formato PKCS#8
+func ParsePublicKey(der []byte) (*PublicKey, error) {
+	var publicKeyInfo struct {
+		Algorithm pkAlgorithmIdentifier
+		PublicKey asn1.BitString
+	}
+	
+	_, err := asn1.Unmarshal(der, &publicKeyInfo)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Verificar OID
+	if !publicKeyInfo.Algorithm.Algorithm.Equal(oidE521EdDSA) {
+		return nil, errors.New("unsupported curve OID")
+	}
+	
+	curve := E521()
+	
+	// Verificar se os bytes da chave pública não estão vazios
+	if len(publicKeyInfo.PublicKey.Bytes) == 0 {
+		return nil, errors.New("public key bytes are empty")
+	}
+	
+	// Unmarshal das coordenadas do ponto
+	x, y := curve.Unmarshal(publicKeyInfo.PublicKey.Bytes)
+	if x == nil || y == nil {
+		return nil, errors.New("failed to unmarshal public key")
+	}
+	
+	return &PublicKey{
+		Point: Point{
+			X: x,
+			Y: y,
+		},
+		Curve: curve,
+	}, nil
+}
+
+// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8
+func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
+	if priv.Curve != E521() {
+		return nil, errors.New("unsupported curve")
+	}
+	
+	if !priv.Curve.IsOnCurve(priv.X, priv.Y) {
+		return nil, errors.New("public key is not on the curve")
+	}
+	
+	// Converter chave privada D para bytes
+	dBytes := priv.D.Bytes()
+	curveSize := (priv.Curve.BitSize + 7) / 8
+	
+	// Padding se necessário
+	if len(dBytes) < curveSize {
+		padding := make([]byte, curveSize-len(dBytes))
+		dBytes = append(padding, dBytes...)
+	}
+	
+	// Marshal da chave pública
+	publicKeyBytes := priv.Curve.Marshal(priv.X, priv.Y)
+	
+	// Criar estrutura PrivateKeyInfo
+	privateKeyInfo := struct {
+		Version             int
+		PrivateKeyAlgorithm pkAlgorithmIdentifier
+		PrivateKey          []byte `asn1:"tag:4"` // OCTET STRING
+		PublicKey           asn1.BitString `asn1:"optional,explicit,tag:1"`
+	}{
+		Version: 0,
+		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
+			Algorithm:  oidE521EdDSA,
+			Parameters: asn1.RawValue{Tag: asn1.TagOID},
+		},
+		PrivateKey: dBytes,
+		PublicKey:  asn1.BitString{Bytes: publicKeyBytes, BitLength: len(publicKeyBytes) * 8},
+	}
+	
+	// Marshal da estrutura
+	return asn1.Marshal(privateKeyInfo)
+}
+
+// ParsePrivateKey analisa uma chave privada no formato PKCS#8
+func ParsePrivateKey(der []byte) (*PrivateKey, error) {
+	var privateKeyInfo struct {
+		Version             int
+		PrivateKeyAlgorithm pkAlgorithmIdentifier
+		PrivateKey          []byte `asn1:"tag:4"`
+		PublicKey           asn1.BitString `asn1:"optional,explicit,tag:1"`
+	}
+	
+	_, err := asn1.Unmarshal(der, &privateKeyInfo)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Verificar OID
+	if !privateKeyInfo.PrivateKeyAlgorithm.Algorithm.Equal(oidE521EdDSA) {
+		return nil, errors.New("unsupported curve OID")
+	}
+	
+	curve := E521()
+	
+	// Extrair chave privada D
+	D := new(big.Int).SetBytes(privateKeyInfo.PrivateKey)
+	
+	// Extrair chave pública se disponível
+	var x, y *big.Int
+	if len(privateKeyInfo.PublicKey.Bytes) > 0 {
+		x, y = curve.Unmarshal(privateKeyInfo.PublicKey.Bytes)
+	} else {
+		// Calcular chave pública a partir da chave privada
+		x, y = curve.ScalarBaseMult(privateKeyInfo.PrivateKey)
+	}
+	
+	if x == nil || y == nil {
+		return nil, errors.New("failed to unmarshal public key")
+	}
+	
+	if !curve.IsOnCurve(x, y) {
+		return nil, errors.New("public key is not on the curve")
+	}
+	
+	return &PrivateKey{
+		PublicKey: PublicKey{
+			Point: Point{
+				X: x,
+				Y: y,
+			},
+			Curve: curve,
+		},
+		D: D,
+	}, nil
+}
+
+// ECDH calcula o segredo compartilhado ECDH
+func ECDH(privateKey *PrivateKey, publicKey *PublicKey) ([]byte, error) {
+	if privateKey.Curve != publicKey.Curve {
+		return nil, errors.New("curves do not match")
+	}
+	
+	// Computar segredo compartilhado
+	x, _ := privateKey.Curve.ScalarMult(publicKey.X, publicKey.Y, privateKey.D.Bytes())
+	
+	// Retornar coordenada x como segredo
+	return x.Bytes(), nil
 }
 
 // SignEdDSA assina uma mensagem usando PureEdDSA
@@ -401,8 +518,8 @@ func (priv *PrivateKey) SignEdDSA(message []byte) (*EdDSASignature, error) {
 	// Calcular s = r + SHA512(dom(2) || R || A || message) * a mod N
 	h.Reset()
 	h.Write(dom)
-	h.Write(curve.Marshal(R.X, R.Y)) // R comprimido
-	h.Write(curve.Marshal(priv.X, priv.Y)) // A comprimido
+	h.Write(curve.Marshal(R.X, R.Y)) // R no formato não comprimido
+	h.Write(curve.Marshal(priv.X, priv.Y)) // A no formato não comprimido
 	h.Write(message)
 	hramHash := h.Sum(nil)
 	
@@ -436,6 +553,12 @@ func (priv *PrivateKey) SignEdDSAASN1(message []byte) ([]byte, error) {
 	}
 	
 	return asn1.Marshal(signatureASN1)
+}
+
+// SignASN1 - compatibilidade com código existente (usa EdDSA internamente)
+func (priv *PrivateKey) SignASN1(hash []byte) ([]byte, error) {
+	// Para compatibilidade, tratamos o hash como a mensagem
+	return priv.SignEdDSAASN1(hash)
 }
 
 // VerifyEdDSA verifica uma assinatura EdDSA
@@ -494,6 +617,12 @@ func (pub *PublicKey) VerifyEdDSAASN1(message, sigASN1 []byte) bool {
 	return pub.VerifyEdDSA(message, sig)
 }
 
+// VerifyASN1 - compatibilidade com código existente (usa EdDSA internamente)
+func (pub *PublicKey) VerifyASN1(hash, sig []byte) bool {
+	// Para compatibilidade, tratamos o hash como a mensagem
+	return pub.VerifyEdDSAASN1(hash, sig)
+}
+
 // GetPublic retorna a chave pública associada
 func (priv *PrivateKey) GetPublic() *PublicKey {
 	return &priv.PublicKey
@@ -514,4 +643,15 @@ func NewPublicKey(x, y *big.Int) *PublicKey {
 		Point: Point{X: x, Y: y},
 		Curve: curve,
 	}
+}
+
+// ParseSignature analisa uma assinatura ASN.1 e retorna os componentes R e S
+func ParseSignature(sig []byte) (*big.Int, *big.Int, error) {
+	var signature ECDSASignature
+	_, err := asn1.Unmarshal(sig, &signature)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	return signature.R, signature.S, nil
 }
