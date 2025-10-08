@@ -920,7 +920,7 @@ func (curve *Curve) DecompressPoint(signY byte, xBytes []byte) (*big.Int, *big.I
 
 // Estrutura para assinatura ASN.1 em Little Endian
 type EdDSASignatureCompressedLEASN1 struct {
-	RY byte   `asn1:"explicit,tag:0"` // Bit de sinal de Y
+	RY int   `asn1:"explicit,tag:0"` // Bit de sinal de Y
 	RX []byte `asn1:"explicit,tag:1,octet"` // Coordenada X de R (little endian)
 	S  []byte `asn1:"explicit,tag:2,octet"` // Escalar S (little endian)
 }
