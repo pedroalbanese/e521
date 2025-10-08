@@ -505,7 +505,7 @@ func (priv *PrivateKey) SignASN1(message []byte) ([]byte, error) {
 	
 	// Calcular r = SHA3-512(dom(2) || a || message)
 	// Usamos o escalar privado 'a' diretamente em vez de uma seed
-	h := sha3.New512()
+	h := sha3.NewShake256()
 	h.Write(dom)
 	h.Write(priv.D.Bytes()) // Usar o escalar privado diretamente
 	h.Write(message)
@@ -565,7 +565,7 @@ func (pub *PublicKey) VerifyASN1(message, sig []byte) bool {
 	}
 	
 	// Calcular h = SHA3-512(dom(2) || R || A || message)
-	h := sha3.New512()
+	h := sha3.NewShake256()
 	h.Write(dom)
 	h.Write(signature.R)                  // R
 	h.Write(curve.Marshal(pub.X, pub.Y)) // A (chave pública)
@@ -724,7 +724,7 @@ func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
 	dom := []byte{}
 	
 	// Calcular r = SHA3-512(dom(2) || a || message)
-	h := sha3.New512()
+	h := sha3.NewShake256()
 	h.Write(dom)
 	h.Write(priv.D.Bytes())
 	h.Write(message)
@@ -819,7 +819,7 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	dom := []byte{}
 	
 	// Calcular h = SHA3-512(dom(2) || R || A || message)
-	h := sha3.New512()
+	h := sha3.NewShake256()
 	h.Write(dom)
 	
 	// Serializar R comprimido
