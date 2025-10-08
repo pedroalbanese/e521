@@ -819,8 +819,6 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
 }
 
-// Adicione estas funções à struct Curve no arquivo e521.go
-
 // CompressPoint comprime um ponto Edwards para formato (sinal_y, x)
 func (curve *Curve) CompressPoint(x, y *big.Int) (byte, []byte) {
 	curveSize := (curve.BitSize + 7) / 8
