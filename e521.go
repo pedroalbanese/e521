@@ -1,3 +1,48 @@
+// SPDX-License-Identifier: ISC
+//
+// Copyright (c) 2025 Pedro F. Albanese
+//
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+// ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+// ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+// OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+//
+// ---------------------------------------------------------------------------
+//
+// Implements support for ECC over Curve E-521 as specified in the
+// Brazilian national cryptographic standards defined in:
+//
+//   ITI DOC-ICP-01.01 — Brazilian Cryptographic Standards for Public-Key Algorithms
+//
+// This standard is maintained under the ICP-Brasil framework by the
+// Instituto Nacional de Tecnologia da Informação (ITI) and mandates the
+// use of secure, internationally reviewed algorithms for digital
+// certificates and electronic signatures.
+//
+// Curve E-521 is a high-security elliptic curve consistent with 512-bit
+// security strength and is considered future-safe for use in digital
+// signatures and key agreement protocols.
+//
+// Officially approved via:
+//   - Instrução Normativa ITI nº 22, de 23 de março de 2022
+//
+// References:
+//   - ICP-Brasil – DOC-ICP-01.01, v5.0 (2022) 
+//     https://repositorio.iti.gov.br/instrucoes-normativas/IN2022_22_DOC-ICP-01.01.htm
+//   - Instrução Normativa ITI nº 22/2022 – Instituto Nacional de Tecnologia da Informação
+//   - Diego F. Aranha, Paulo S. L. M. Barreto, Geovandro C. C. F. Pereira, Jefferson Ricardini,
+//     "A note on high-security general-purpose elliptic curves", 2013.
+//     https://eprint.iacr.org/2013/647
+//
+// This code implements PureEdDSA using SHA3-512 over the E-521 Edwards curve,
+// compliant with the above specifications.
 package e521
 
 import (
