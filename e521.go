@@ -41,7 +41,7 @@
 //     "A note on high-security general-purpose elliptic curves", 2013.
 //     https://eprint.iacr.org/2013/647
 //
-// This code implements PureEdDSA using SHA3-512 over the E-521 Edwards curve,
+// This code implements PureEdDSA using SHAKE256 over the E-521 Edwards curve,
 // compliant with the above specifications.
 package e521
 
@@ -683,7 +683,7 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	context := []byte{} // ou algum contexto de aplicação
 	dom := dom5(0x00, context)
 	
-	// Calcular h = SHA3-512(dom(2) || R || A || message)
+	// Calcular h = SHAKE256(dom(2) || R || A || message)
 	h := sha3.NewShake256()
 	h.Write(dom)
 	
