@@ -492,6 +492,19 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	}, nil
 }
 
+// dom5
+func dom5(phflag byte, context []byte) []byte {
+    if len(context) > 255 {
+        panic("context too long for dom5")
+    }
+
+    dom := []byte("SigEd521")
+    dom = append(dom, phflag)
+    dom = append(dom, byte(len(context)))
+    dom = append(dom, context...)
+    return dom
+}
+
 // EdDSASignatureCompressedASN1 representa uma assinatura EdDSA comprimida no formato ASN.1
 type EdDSASignatureCompressedASN1 struct {
 	RY *big.Int // Bit de sinal de Y de R (0 ou 1) como big.Int para compatibilidade ASN.1
@@ -577,9 +590,10 @@ func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
 	curve := priv.Curve
 	
 	// Dom: contexto específico do domínio (vazio para PureEdDSA)
-	dom := []byte{}
+	context := []byte{} // ou algum contexto de aplicação
+	dom := dom5(0x00, context)
 	
-	// Calcular r = SHA3-512(dom(2) || a || message) - TUDO em little-endian
+	// Calcular r = SHAKE256(dom(2) || a || message) - TUDO em little-endian
 	h := sha3.NewShake256()
 	h.Write(dom)
 	
@@ -601,7 +615,7 @@ func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
 	// Comprimir ponto R
 	signY, RxBytes := curve.CompressPoint(Rx, Ry)
 	
-	// Calcular s = r + SHA3-512(dom(2) || R || A || message) * a mod N
+	// Calcular s = r + SHAKE256(dom(2) || R || A || message) * a mod N
 	h.Reset()
 	h.Write(dom)
 	
@@ -666,7 +680,8 @@ func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
 	s := bytesToLittleInt(sBytes)
 	
 	// Dom: contexto específico do domínio (vazio para PureEdDSA)
-	dom := []byte{}
+	context := []byte{} // ou algum contexto de aplicação
+	dom := dom5(0x00, context)
 	
 	// Calcular h = SHA3-512(dom(2) || R || A || message)
 	h := sha3.NewShake256()
