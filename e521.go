@@ -917,3 +917,78 @@ func (curve *Curve) DecompressPoint(signY byte, xBytes []byte) (*big.Int, *big.I
 	
 	return x, y
 }
+
+// Estrutura para assinatura ASN.1 em Little Endian
+type EdDSASignatureCompressedLEASN1 struct {
+	RY byte   `asn1:"explicit,tag:0"` // Bit de sinal de Y
+	RX []byte `asn1:"explicit,tag:1,octet"` // Coordenada X de R (little endian)
+	S  []byte `asn1:"explicit,tag:2,octet"` // Escalar S (little endian)
+}
+
+// SignASN1CompressedLE assina e retorna ASN.1 com campos em little endian (~133-140 bytes)
+func (priv *PrivateKey) SignASN1CompressedLE(message []byte) ([]byte, error) {
+	compressedSig, err := priv.SignCompressed(message)
+	if err != nil {
+		return nil, err
+	}
+
+	curve := priv.Curve
+	curveSize := (curve.BitSize + 7) / 8
+
+	if len(compressedSig) != 1+curveSize+curveSize {
+		return nil, errors.New("tamanho de assinatura comprimida inválido")
+	}
+
+	signY := compressedSig[0]
+	RxBytes := compressedSig[1 : 1+curveSize]
+	SBytes := compressedSig[1+curveSize:]
+
+	// Converter para little endian
+	RxLE := reverseBytes(RxBytes)
+	SLE := reverseBytes(SBytes)
+
+	// Construir estrutura ASN.1
+	signature := EdDSASignatureCompressedLEASN1{
+		RY: signY,
+		RX: RxLE,
+		S:  SLE,
+	}
+
+	return asn1.Marshal(signature)
+}
+
+// VerifyASN1CompressedLE verifica assinatura ASN.1 com campos em little endian
+func (pub *PublicKey) VerifyASN1CompressedLE(message, sig []byte) bool {
+	var signature EdDSASignatureCompressedLEASN1
+
+	_, err := asn1.Unmarshal(sig, &signature)
+	if err != nil {
+		return false
+	}
+
+	curve := pub.Curve
+	curveSize := (curve.BitSize + 7) / 8
+
+	if len(signature.RX) != curveSize || len(signature.S) != curveSize {
+		return false
+	}
+
+	RxBE := reverseBytes(signature.RX)
+	SBE := reverseBytes(signature.S)
+
+	compressedSig := make([]byte, 1+curveSize+curveSize)
+	compressedSig[0] = signature.RY
+	copy(compressedSig[1:1+curveSize], RxBE)
+	copy(compressedSig[1+curveSize:], SBE)
+
+	return pub.VerifyCompressed(message, compressedSig)
+}
+
+// reverseBytes inverte a ordem dos bytes (conversão entre LE <-> BE)
+func reverseBytes(b []byte) []byte {
+	out := make([]byte, len(b))
+	for i := 0; i < len(b); i++ {
+		out[i] = b[len(b)-1-i]
+	}
+	return out
+}
