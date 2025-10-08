@@ -502,11 +502,70 @@ func ECDH(privateKey *PrivateKey, publicKey *PublicKey) ([]byte, error) {
 		return nil, errors.New("curves do not match")
 	}
 	
-	// Computar segredo compartilhado
-	x, _ := privateKey.Curve.ScalarMult(publicKey.X, publicKey.Y, privateKey.D.Bytes())
+	curve := privateKey.Curve
 	
-	// Retornar coordenada x como segredo
-	return x.Bytes(), nil
+	// 1. Verificar se o ponto público é válido e está na curva
+	if !curve.IsOnCurve(publicKey.X, publicKey.Y) {
+		return nil, errors.New("public key point is not on the curve")
+	}
+	
+	// 2. Verificar se o ponto não é o ponto no infinito
+	if isPointAtInfinity(publicKey.X, publicKey.Y) {
+		return nil, errors.New("public key is point at infinity")
+	}
+	
+	// 3. Verificar se o ponto tem ordem correta (opcional para Edwards, mas boa prática)
+	if !hasCorrectOrder(publicKey, curve) {
+		return nil, errors.New("public key does not have correct order")
+	}
+	
+	// 4. Computar segredo compartilhado
+	sharedX, sharedY := curve.ScalarMult(publicKey.X, publicKey.Y, privateKey.D.Bytes())
+	
+	// 5. Verificar se o resultado não é ponto no infinito
+	if isPointAtInfinity(sharedX, sharedY) {
+		return nil, errors.New("shared secret is point at infinity")
+	}
+	
+	// 6. Aplicar KDF (Key Derivation Function) ao invés de usar coordenada X diretamente
+	sharedSecret := deriveKey(sharedX.Bytes(), sharedY.Bytes(), publicKey)
+	
+	return sharedSecret, nil
+}
+
+// isPointAtInfinity verifica se um ponto é o ponto no infinito
+// Em curvas Edwards, o ponto neutro é (0, 1)
+func isPointAtInfinity(x, y *big.Int) bool {
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+	return x.Cmp(zero) == 0 && y.Cmp(one) == 0
+}
+
+// hasCorrectOrder verifica se um ponto tem a ordem correta
+func hasCorrectOrder(pub *PublicKey, curve *Curve) bool {
+	// Multiplicar pelo co-factor deve resultar em ponto não-infinito
+	// Para E-521, co-factor = 4
+	h := big.NewInt(4) // co-factor
+	tempX, tempY := curve.ScalarMult(pub.X, pub.Y, h.Bytes())
+	
+	return !isPointAtInfinity(tempX, tempY)
+}
+
+// deriveKey aplica KDF para derivar uma chave segura
+func deriveKey(xBytes, yBytes []byte, peerPublicKey *PublicKey) []byte {
+	// Usar HMAC-based KDF ou HKDF
+	h := sha3.New512()
+	
+	// Incluir ambas as coordenadas e informação do ponto público do peer
+	h.Write(xBytes)
+	h.Write(yBytes)
+	h.Write(peerPublicKey.X.Bytes())
+	h.Write(peerPublicKey.Y.Bytes())
+	
+	// Adicionar contexto específico da aplicação
+	h.Write([]byte("ECDH-X521-v1"))
+	
+	return h.Sum(nil)
 }
 
 // SignASN1 assina uma mensagem usando PureEdDSA e retorna no formato ASN.1
