@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	// OID para identificação da curva E-521 EdDSA
+	// OID oficial definido pelo ITI (ICP-Brasil) para identificação da curva E-521 EdDSA
+    // Conforme DOC-ICP-01.01
 	oidE521EdDSA = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44588, 2, 1}
 )
 
