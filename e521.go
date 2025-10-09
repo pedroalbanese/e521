@@ -35,7 +35,7 @@
 //
 // References:
 //   - ICP-Brasil – DOC-ICP-01.01, v5.0 (2022) 
-//     https://repositorio.iti.gov.br/instrucoes-normativas/IN2022_22_DOC-ICP-01.01.htm
+//     https://www.gov.br/iti/pt-br/assuntos/legislacao/documentos-principais/IN2022_22_DOC_ICP_01.01_assinado.pdf
 //   - Instrução Normativa ITI nº 22/2022 – Instituto Nacional de Tecnologia da Informação
 //   - Diego F. Aranha, Paulo S. L. M. Barreto, Geovandro C. C. F. Pereira, Jefferson Ricardini,
 //     "A note on high-security general-purpose elliptic curves", 2013.
