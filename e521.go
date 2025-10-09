@@ -585,139 +585,144 @@ func (pub *PublicKey) VerifyASN1Compressed(message, sig []byte) bool {
 	return pub.VerifyCompressed(message, compressedSig)
 }
 
+// hashE521 implementa H(x) = SHAKE256(dom5(phflag,context)||x, 132)
+func hashE521(phflag byte, context, x []byte) []byte {
+    dom := dom5(phflag, context)
+    
+    h := sha3.NewShake256()
+    h.Write(dom)
+    h.Write(x)
+    
+    // Output de 132 bytes conforme especificação
+    hash := make([]byte, 132)
+    h.Read(hash)
+    return hash
+}
+
 // SignCompressed assina uma mensagem e retorna assinatura binária comprimida (133 bytes)
 func (priv *PrivateKey) SignCompressed(message []byte) ([]byte, error) {
-	curve := priv.Curve
-	
-	// Dom: contexto específico do domínio (vazio para PureEdDSA)
-	context := []byte{} // ou algum contexto de aplicação
-	dom := dom5(0x00, context)
-	
-	// Calcular r = SHAKE256(dom(2) || a || message) - TUDO em little-endian
-	h := sha3.NewShake256()
-	h.Write(dom)
-	
-	// Usar chave privada em little-endian
-	curveSize := (curve.BitSize + 7) / 8
-	aBytes := littleIntToBytes(priv.D, curveSize)
-	h.Write(aBytes)
-	h.Write(message)
-	rHash := h.Sum(nil)
-	
-	// Converter r para escalar (little-endian)
-	r := bytesToLittleInt(rHash)
-	r.Mod(r, curve.N)
-	
-	// Calcular R = r * G
-	rBytes := littleIntToBytes(r, curveSize)
-	Rx, Ry := curve.ScalarBaseMult(rBytes)
-	
-	// Comprimir ponto R
-	signY, RxBytes := curve.CompressPoint(Rx, Ry)
-	
-	// Calcular s = r + SHAKE256(dom(2) || R || A || message) * a mod N
-	h.Reset()
-	h.Write(dom)
-	
-	// Serializar R comprimido para o hash (little-endian)
-	RCompressed := make([]byte, len(RxBytes)+1)
-	RCompressed[0] = signY
-	copy(RCompressed[1:], RxBytes)
-	h.Write(RCompressed)
-	
-	// Serializar A (chave pública) comprimido
-	signAY, AxBytes := curve.CompressPoint(priv.X, priv.Y)
-	ACompressed := make([]byte, len(AxBytes)+1)
-	ACompressed[0] = signAY
-	copy(ACompressed[1:], AxBytes)
-	h.Write(ACompressed)
-	
-	h.Write(message)
-	hramHash := h.Sum(nil)
-	
-	hram := bytesToLittleInt(hramHash)
-	hram.Mod(hram, curve.N)
-	
-	s := new(big.Int).Mul(hram, priv.D)
-	s.Add(s, r)
-	s.Mod(s, curve.N)
-	
-	// Codificar assinatura comprimida (tudo em little-endian)
-	sBytes := littleIntToBytes(s, curveSize)
-	
-	// Criar assinatura comprimida: [signY][Rx][s]
-	signature := make([]byte, 1+curveSize+curveSize)
-	signature[0] = signY
-	copy(signature[1:1+curveSize], RxBytes)
-	copy(signature[1+curveSize:], sBytes)
-	
-	return signature, nil
+    curve := priv.Curve
+    
+    // Contexto específico do domínio (vazio para PureEdDSA)
+    context := []byte{}
+    phflag := byte(0x00) // 0 para EdDSAPure, 1 para EdDSAHash
+    
+    // Calcular r = H(dom5(phflag, context) || a || message)
+    curveSize := (curve.BitSize + 7) / 8
+    aBytes := littleIntToBytes(priv.D, curveSize)
+    
+    hashInput := make([]byte, 0, len(aBytes)+len(message))
+    hashInput = append(hashInput, aBytes...)
+    hashInput = append(hashInput, message...)
+    
+    rHash := hashE521(phflag, context, hashInput)
+    
+    // Converter r para escalar (little-endian) - usar apenas os primeiros 66 bytes se necessário
+    r := bytesToLittleInt(rHash[:curveSize])
+    r.Mod(r, curve.N)
+    
+    // Calcular R = r * G
+    rBytes := littleIntToBytes(r, curveSize)
+    Rx, Ry := curve.ScalarBaseMult(rBytes)
+    
+    // Comprimir ponto R
+    signY, RxBytes := curve.CompressPoint(Rx, Ry)
+    
+    // Calcular s = r + H(dom5(phflag, context) || R || A || message) * a mod N
+    RCompressed := make([]byte, len(RxBytes)+1)
+    RCompressed[0] = signY
+    copy(RCompressed[1:], RxBytes)
+    
+    signAY, AxBytes := curve.CompressPoint(priv.X, priv.Y)
+    ACompressed := make([]byte, len(AxBytes)+1)
+    ACompressed[0] = signAY
+    copy(ACompressed[1:], AxBytes)
+    
+    hramInput := make([]byte, 0, len(RCompressed)+len(ACompressed)+len(message))
+    hramInput = append(hramInput, RCompressed...)
+    hramInput = append(hramInput, ACompressed...)
+    hramInput = append(hramInput, message...)
+    
+    hramHash := hashE521(phflag, context, hramInput)
+    hram := bytesToLittleInt(hramHash[:curveSize])
+    hram.Mod(hram, curve.N)
+    
+    s := new(big.Int).Mul(hram, priv.D)
+    s.Add(s, r)
+    s.Mod(s, curve.N)
+    
+    // Codificar assinatura comprimida (tudo em little-endian)
+    sBytes := littleIntToBytes(s, curveSize)
+    
+    // Criar assinatura comprimida: [signY][Rx][s]
+    signature := make([]byte, 1+curveSize+curveSize)
+    signature[0] = signY
+    copy(signature[1:1+curveSize], RxBytes)
+    copy(signature[1+curveSize:], sBytes)
+    
+    return signature, nil
 }
 
 // VerifyCompressed verifica uma assinatura EdDSA comprimida (formato binário)
 func (pub *PublicKey) VerifyCompressed(message, sig []byte) bool {
-	curve := pub.Curve
-	curveSize := (curve.BitSize + 7) / 8
-	
-	// Verificar tamanho da assinatura
-	expectedSize := 1 + curveSize + curveSize // signY + Rx + s
-	if len(sig) != expectedSize {
-		return false
-	}
-	
-	// Extrair componentes da assinatura
-	signY := sig[0]
-	RxBytes := sig[1 : 1+curveSize]
-	sBytes := sig[1+curveSize:]
-	
-	// Descomprimir ponto R
-	Rx, Ry := curve.DecompressPoint(signY, RxBytes)
-	if Rx == nil || Ry == nil {
-		return false
-	}
-	
-	// Converter s para escalar (little-endian)
-	s := bytesToLittleInt(sBytes)
-	
-	// Dom: contexto específico do domínio (vazio para PureEdDSA)
-	context := []byte{} // ou algum contexto de aplicação
-	dom := dom5(0x00, context)
-	
-	// Calcular h = SHAKE256(dom(2) || R || A || message)
-	h := sha3.NewShake256()
-	h.Write(dom)
-	
-	// Serializar R comprimido
-	RCompressed := make([]byte, len(RxBytes)+1)
-	RCompressed[0] = signY
-	copy(RCompressed[1:], RxBytes)
-	h.Write(RCompressed)
-	
-	// Serializar A (chave pública) comprimido
-	signAY, AxBytes := curve.CompressPoint(pub.X, pub.Y)
-	ACompressed := make([]byte, len(AxBytes)+1)
-	ACompressed[0] = signAY
-	copy(ACompressed[1:], AxBytes)
-	h.Write(ACompressed)
-	
-	h.Write(message)
-	hramHash := h.Sum(nil)
-	
-	hram := bytesToLittleInt(hramHash)
-	hram.Mod(hram, curve.N)
-	
-	// Verificar s * G == R + h * A
-	sBytesForMult := littleIntToBytes(s, curveSize)
-	sGx, sGy := curve.ScalarBaseMult(sBytesForMult)
-	
-	hBytesForMult := littleIntToBytes(hram, curveSize)
-	hAx, hAy := curve.ScalarMult(pub.X, pub.Y, hBytesForMult)
-	
-	// Calcular R + h * A
-	rhAx, rhAy := curve.Add(Rx, Ry, hAx, hAy)
-	
-	// Comparar s * G com R + h * A
-	return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
+    curve := pub.Curve
+    curveSize := (curve.BitSize + 7) / 8
+    
+    // Verificar tamanho da assinatura
+    expectedSize := 1 + curveSize + curveSize // signY + Rx + s
+    if len(sig) != expectedSize {
+        return false
+    }
+    
+    // Extrair componentes da assinatura
+    signY := sig[0]
+    RxBytes := sig[1 : 1+curveSize]
+    sBytes := sig[1+curveSize:]
+    
+    // Descomprimir ponto R
+    Rx, Ry := curve.DecompressPoint(signY, RxBytes)
+    if Rx == nil || Ry == nil {
+        return false
+    }
+    
+    // Converter s para escalar (little-endian)
+    s := bytesToLittleInt(sBytes)
+    
+    // Contexto específico do domínio (vazio para PureEdDSA)
+    context := []byte{}
+    phflag := byte(0x00)
+    
+    // Calcular h = H(dom5(phflag, context) || R || A || message)
+    RCompressed := make([]byte, len(RxBytes)+1)
+    RCompressed[0] = signY
+    copy(RCompressed[1:], RxBytes)
+    
+    signAY, AxBytes := curve.CompressPoint(pub.X, pub.Y)
+    ACompressed := make([]byte, len(AxBytes)+1)
+    ACompressed[0] = signAY
+    copy(ACompressed[1:], AxBytes)
+    
+    hramInput := make([]byte, 0, len(RCompressed)+len(ACompressed)+len(message))
+    hramInput = append(hramInput, RCompressed...)
+    hramInput = append(hramInput, ACompressed...)
+    hramInput = append(hramInput, message...)
+    
+    hramHash := hashE521(phflag, context, hramInput)
+    hram := bytesToLittleInt(hramHash[:curveSize])
+    hram.Mod(hram, curve.N)
+    
+    // Verificar s * G == R + h * A
+    sBytesForMult := littleIntToBytes(s, curveSize)
+    sGx, sGy := curve.ScalarBaseMult(sBytesForMult)
+    
+    hBytesForMult := littleIntToBytes(hram, curveSize)
+    hAx, hAy := curve.ScalarMult(pub.X, pub.Y, hBytesForMult)
+    
+    // Calcular R + h * A
+    rhAx, rhAy := curve.Add(Rx, Ry, hAx, hAy)
+    
+    // Comparar s * G com R + h * A
+    return constantTimeEqual(sGx, rhAx) && constantTimeEqual(sGy, rhAy)
 }
 
 // CompressPoint comprime um ponto Edwards para formato (sinal_y, x) em little-endian
