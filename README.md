@@ -15,8 +15,9 @@ This algorithm is officially approved through the **Instrução Normativa ITI n�
 Diego F. Aranha, Paulo S. L. M. Barreto, Geovandro C. C. F. Pereira, Jefferson Ricardini. "A note on high-security general-purpose elliptic curves." 2013. https://eprint.iacr.org/2013/647
 
 **Source:**  
-[ICP-Brasil – DOC-ICP-01.01, v5.0 (2022)](https://repositorio.iti.gov.br/instrucoes-normativas/IN2022_22_DOC-ICP-01.01.htm)  
+[ICP-Brasil – DOC-ICP-01.01, v5.0 (2022)](https://repositorio.iti.gov.br/instrucoes-normativas/IN2022_22_DOC-ICP-01.01.htm) 
 Instrução Normativa ITI nº 22/2022 – Instituto Nacional de Tecnologia da Informação
+OID Ed521: 1.3.6.1.4.1.44588.2.1
 
 #### Usage
 ```go
