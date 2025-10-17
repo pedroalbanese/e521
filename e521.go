@@ -513,61 +513,73 @@ func hashE521(phflag byte, context, x []byte) []byte {
     return hash
 }
 
-// CompressPoint compresses Edwards point: y (little-endian) + sign bit of x in MSB of last byte
+// CompressPoint compresses Edwards point according to RFC 8032: store sign bit of x
 func (c *Curve) CompressPoint(x, y *big.Int) []byte {
 	byteLen := (c.BitSize + 7) / 8
 	yBytes := littleIntToBytes(y, byteLen)
+
+	// Get the sign bit from x (LSB in little-endian representation)
 	xBytes := littleIntToBytes(x, byteLen)
+	signBit := xBytes[0] & 1
 
-	// Extract least significant bit of x for sign
-	signX := xBytes[0] & 1
+	// Store sign bit in the LSB of the last byte of yBytes (RFC 8032)
+	compressed := make([]byte, byteLen)
+	copy(compressed, yBytes)
+	compressed[byteLen-1] |= signBit << 7 // MSB do último byte em little-endian
 
-	// Set sign bit in MSB of last byte of yBytes
-	yBytes[len(yBytes)-1] |= signX << 7
-
-	return yBytes
+	return compressed
 }
 
-// DecompressPoint decompresses a compressed point into x, y coordinates
+// DecompressPoint decompresses a compressed point according to RFC 8032
 func (c *Curve) DecompressPoint(data []byte) (*big.Int, *big.Int) {
 	byteLen := (c.BitSize + 7) / 8
 	if len(data) != byteLen {
 		return nil, nil
 	}
 
-	signX := (data[len(data)-1] >> 7) & 1
+	// Extract sign bit from MSB of last byte
+	signBit := (data[byteLen-1] >> 7) & 1
 
+	// Clear the sign bit from y data
 	yBytes := make([]byte, byteLen)
 	copy(yBytes, data)
-	yBytes[len(yBytes)-1] &= 0x7F // clear MSB for y
+	yBytes[byteLen-1] &= 0x7F // Clear MSB
 
 	y := bytesToLittleInt(yBytes)
 
-	// Solve for x using curve equation
+	// Solve for x using Edwards curve equation: x² + y² = 1 + d*x²*y²
+	// Rearranged to: x² = (1 - y²) / (1 - d*y²)
 	y2 := new(big.Int).Mul(y, y)
 	y2.Mod(y2, c.P)
 
-	num := new(big.Int).Sub(y2, big.NewInt(1))
-	num.Mod(num, c.P)
+	// numerator = 1 - y²
+	numerator := new(big.Int).Sub(big.NewInt(1), y2)
+	numerator.Mod(numerator, c.P)
 
-	den := new(big.Int).Sub(new(big.Int).Mul(c.D, y2), big.NewInt(1))
-	den.Mod(den, c.P)
+	// denominator = 1 - d*y²
+	dy2 := new(big.Int).Mul(y2, c.D)
+	dy2.Mod(dy2, c.P)
+	denominator := new(big.Int).Sub(big.NewInt(1), dy2)
+	denominator.Mod(denominator, c.P)
 
-	denInv := new(big.Int).ModInverse(den, c.P)
-	if denInv == nil {
+	// x² = numerator / denominator
+	invDenom := new(big.Int).ModInverse(denominator, c.P)
+	if invDenom == nil {
 		return nil, nil
 	}
 
-	x2 := new(big.Int).Mul(num, denInv)
+	x2 := new(big.Int).Mul(numerator, invDenom)
 	x2.Mod(x2, c.P)
 
+	// Calculate square root
 	x := new(big.Int).ModSqrt(x2, c.P)
 	if x == nil {
 		return nil, nil
 	}
 
+	// Choose correct x based on sign bit (RFC 8032 uses sign of x)
 	xBytes := littleIntToBytes(x, byteLen)
-	if (xBytes[0] & 1) != signX {
+	if (xBytes[0] & 1) != signBit {
 		x.Sub(c.P, x)
 		x.Mod(x, c.P)
 	}
