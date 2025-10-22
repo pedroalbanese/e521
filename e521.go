@@ -406,27 +406,22 @@ func ParsePublicKey(der []byte) (*PublicKey, error) {
 	}, nil
 }
 
-// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8 com chave pública comprimida
+// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8 SEM a chave pública
 func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	curve := E521()
 	if priv.curve == nil {
 		priv.curve = curve
 	}
 	
-	// Converter chave privada D para bytes (little-endian)
+	// Converter apenas a chave privada D para bytes (little-endian)
 	curveSize := (curve.BitSize + 7) / 8
 	dBytes := littleIntToBytes(priv.D, curveSize)
 	
-	// Calcular e comprimir a chave pública sob demanda
-	pub := priv.GetPublic()
-	compressedPubKey := curve.CompressPoint(pub.X, pub.Y)
-	
-	// Criar estrutura PrivateKeyInfo
+	// Criar estrutura PrivateKeyInfo SEM a chave pública
 	privateKeyInfo := struct {
 		Version             int
 		PrivateKeyAlgorithm pkAlgorithmIdentifier
 		PrivateKey          []byte `asn1:"tag:4"` // OCTET STRING
-		PublicKey           asn1.BitString `asn1:"optional,explicit,tag:1"`
 	}{
 		Version: 0,
 		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
@@ -434,14 +429,13 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
 		PrivateKey: dBytes,
-		PublicKey:  asn1.BitString{Bytes: compressedPubKey, BitLength: len(compressedPubKey) * 8},
 	}
 	
 	// Marshal da estrutura
 	return asn1.Marshal(privateKeyInfo)
 }
 
-// ParsePrivateKey analisa uma chave privada no formato PKCS#8 com chave pública comprimida
+// ParsePrivateKey analisa uma chave privada no formato PKCS#8
 func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	var privateKeyInfo struct {
 		Version             int
