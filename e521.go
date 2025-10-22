@@ -108,8 +108,8 @@ type PublicKey struct {
 
 // PrivateKey representa uma chave privada E-521 EdDSA
 type PrivateKey struct {
-	PublicKey
-	D *big.Int // Escalar privado (a)
+	D     *big.Int // Escalar privado (a) - apenas o escalar
+	curve *Curve   // Referência à curva para computação sob demanda
 }
 
 // pkAlgorithmIdentifier para ASN.1
@@ -252,19 +252,30 @@ func GenerateKeyWithReader(reader io.Reader) (*PrivateKey, error) {
 		return nil, err
 	}
 	
-	// Calcular chave pública: A = a * G
-	publicKeyX, publicKeyY := curve.ScalarBaseMult(littleIntToBytes(privateKey, (curve.BitSize+7)/8))
-	
 	return &PrivateKey{
-		PublicKey: PublicKey{
-			Point: Point{
-				X: publicKeyX,
-				Y: publicKeyY,
-			},
-			Curve: curve,
-		},
-		D: privateKey,
+		D:     privateKey,
+		curve: curve,
 	}, nil
+}
+
+// GetPublic retorna a chave pública computada a partir da chave privada
+func (priv *PrivateKey) GetPublic() *PublicKey {
+	curve := priv.curve
+	if curve == nil {
+		curve = E521()
+		priv.curve = curve
+	}
+	
+	// Calcular chave pública: A = a * G
+	publicKeyX, publicKeyY := curve.ScalarBaseMult(littleIntToBytes(priv.D, (curve.BitSize+7)/8))
+	
+	return &PublicKey{
+		Point: Point{
+			X: publicKeyX,
+			Y: publicKeyY,
+		},
+		Curve: curve,
+	}
 }
 
 // randLittleInt gera um número aleatório em little-endian usando o reader fornecido
@@ -397,20 +408,18 @@ func ParsePublicKey(der []byte) (*PublicKey, error) {
 
 // MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8 com chave pública comprimida
 func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
-	if priv.Curve != E521() {
-		return nil, errors.New("unsupported curve")
-	}
-	
-	if !priv.Curve.IsOnCurve(priv.X, priv.Y) {
-		return nil, errors.New("public key is not on the curve")
+	curve := E521()
+	if priv.curve == nil {
+		priv.curve = curve
 	}
 	
 	// Converter chave privada D para bytes (little-endian)
-	curveSize := (priv.Curve.BitSize + 7) / 8
+	curveSize := (curve.BitSize + 7) / 8
 	dBytes := littleIntToBytes(priv.D, curveSize)
 	
-	// Comprimir a chave pública conforme RFC 8032
-	compressedPubKey := priv.Curve.CompressPoint(priv.X, priv.Y)
+	// Calcular e comprimir a chave pública sob demanda
+	pub := priv.GetPublic()
+	compressedPubKey := curve.CompressPoint(pub.X, pub.Y)
 	
 	// Criar estrutura PrivateKeyInfo
 	privateKeyInfo := struct {
@@ -456,33 +465,9 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	// Extrair chave privada D (little-endian)
 	D := bytesToLittleInt(privateKeyInfo.PrivateKey)
 	
-	// Extrair e descomprimir chave pública se disponível
-	var x, y *big.Int
-	if len(privateKeyInfo.PublicKey.Bytes) > 0 {
-		x, y = curve.DecompressPoint(privateKeyInfo.PublicKey.Bytes)
-	} else {
-		// Calcular chave pública a partir da chave privada e comprimir
-		curveSize := (curve.BitSize + 7) / 8
-		x, y = curve.ScalarBaseMult(littleIntToBytes(D, curveSize))
-	}
-	
-	if x == nil || y == nil {
-		return nil, errors.New("failed to unmarshal public key")
-	}
-	
-	if !curve.IsOnCurve(x, y) {
-		return nil, errors.New("public key is not on the curve")
-	}
-	
 	return &PrivateKey{
-		PublicKey: PublicKey{
-			Point: Point{
-				X: x,
-				Y: y,
-			},
-			Curve: curve,
-		},
-		D: D,
+		D:     D,
+		curve: curve,
 	}, nil
 }
 
@@ -589,8 +574,15 @@ func (c *Curve) DecompressPoint(data []byte) (*big.Int, *big.Int) {
 
 // Sign creates a signature for message, returning 1+ curveSize+ scalar size bytes
 func (priv *PrivateKey) Sign(message []byte) ([]byte, error) {
-	curve := priv.Curve
+	curve := E521()
+	if priv.curve == nil {
+		priv.curve = curve
+	}
+	
 	byteLen := (curve.BitSize + 7) / 8
+
+	// Obter chave pública sob demanda
+	pub := priv.GetPublic()
 
 	// 1. Hash prefix "dom" + priv.D bytes
 	prefix := hashE521(0x00, []byte{}, littleIntToBytes(priv.D, byteLen))
@@ -605,7 +597,7 @@ func (priv *PrivateKey) Sign(message []byte) ([]byte, error) {
 	RCompressed := curve.CompressPoint(Rx, Ry)
 
 	// 4. Compress public key A
-	ACompressed := curve.CompressPoint(priv.X, priv.Y)
+	ACompressed := curve.CompressPoint(pub.X, pub.Y)
 
 	// 5. Compute h = SHAKE256(dom || R || A || message) mod N
 	hramInput := append(append(RCompressed, ACompressed...), message...)
@@ -720,11 +712,6 @@ func constantTimeEqual(a, b *big.Int) bool {
 	
 	// Usar subtle.ConstantTimeCompare para comparação em tempo constante
 	return subtle.ConstantTimeCompare(aPadded, bPadded) == 1
-}
-
-// GetPublic retorna a chave pública associada
-func (priv *PrivateKey) GetPublic() *PublicKey {
-	return &priv.PublicKey
 }
 
 // Equal compara duas chaves públicas
