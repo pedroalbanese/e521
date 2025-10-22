@@ -331,14 +331,14 @@ func (curve *Curve) Unmarshal(data []byte) (*big.Int, *big.Int) {
 	return x, y
 }
 
-// MarshalPKCS8PublicKey serializa uma chave pública no formato PKCS#8
+// MarshalPKCS8PublicKey serializa uma chave pública no formato PKCS#8 com chave comprimida
 func (pub *PublicKey) MarshalPKCS8PublicKey() ([]byte, error) {
 	if pub.Curve != E521() {
 		return nil, errors.New("unsupported curve")
 	}
 	
-	// Marshal das coordenadas do ponto
-	derBytes := pub.Curve.Marshal(pub.X, pub.Y)
+	// Comprimir o ponto público conforme RFC 8032
+	compressedPubKey := pub.Curve.CompressPoint(pub.X, pub.Y)
 	
 	// Criar estrutura SubjectPublicKeyInfo
 	subjectPublicKeyInfo := struct {
@@ -349,14 +349,14 @@ func (pub *PublicKey) MarshalPKCS8PublicKey() ([]byte, error) {
 			Algorithm:  oidE521EdDSA,
 			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
-		PublicKey: asn1.BitString{Bytes: derBytes, BitLength: len(derBytes) * 8},
+		PublicKey: asn1.BitString{Bytes: compressedPubKey, BitLength: len(compressedPubKey) * 8},
 	}
 	
 	// Marshal da estrutura
 	return asn1.Marshal(subjectPublicKeyInfo)
 }
 
-// ParsePublicKey analisa uma chave pública no formato PKCS#8
+// ParsePublicKey analisa uma chave pública no formato PKCS#8 com chave comprimida
 func ParsePublicKey(der []byte) (*PublicKey, error) {
 	var publicKeyInfo struct {
 		Algorithm pkAlgorithmIdentifier
@@ -380,10 +380,10 @@ func ParsePublicKey(der []byte) (*PublicKey, error) {
 		return nil, errors.New("public key bytes are empty")
 	}
 	
-	// Unmarshal das coordenadas do ponto
-	x, y := curve.Unmarshal(publicKeyInfo.PublicKey.Bytes)
+	// Descomprimir o ponto público conforme RFC 8032
+	x, y := curve.DecompressPoint(publicKeyInfo.PublicKey.Bytes)
 	if x == nil || y == nil {
-		return nil, errors.New("failed to unmarshal public key")
+		return nil, errors.New("failed to decompress public key")
 	}
 	
 	return &PublicKey{
@@ -395,7 +395,7 @@ func ParsePublicKey(der []byte) (*PublicKey, error) {
 	}, nil
 }
 
-// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8
+// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8 com chave pública comprimida
 func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	if priv.Curve != E521() {
 		return nil, errors.New("unsupported curve")
@@ -409,8 +409,8 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	curveSize := (priv.Curve.BitSize + 7) / 8
 	dBytes := littleIntToBytes(priv.D, curveSize)
 	
-	// Marshal da chave pública
-	publicKeyBytes := priv.Curve.Marshal(priv.X, priv.Y)
+	// Comprimir a chave pública conforme RFC 8032
+	compressedPubKey := priv.Curve.CompressPoint(priv.X, priv.Y)
 	
 	// Criar estrutura PrivateKeyInfo
 	privateKeyInfo := struct {
@@ -425,14 +425,14 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
 		PrivateKey: dBytes,
-		PublicKey:  asn1.BitString{Bytes: publicKeyBytes, BitLength: len(publicKeyBytes) * 8},
+		PublicKey:  asn1.BitString{Bytes: compressedPubKey, BitLength: len(compressedPubKey) * 8},
 	}
 	
 	// Marshal da estrutura
 	return asn1.Marshal(privateKeyInfo)
 }
 
-// ParsePrivateKey analisa uma chave privada no formato PKCS#8
+// ParsePrivateKey analisa uma chave privada no formato PKCS#8 com chave pública comprimida
 func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	var privateKeyInfo struct {
 		Version             int
@@ -456,12 +456,12 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	// Extrair chave privada D (little-endian)
 	D := bytesToLittleInt(privateKeyInfo.PrivateKey)
 	
-	// Extrair chave pública se disponível
+	// Extrair e descomprimir chave pública se disponível
 	var x, y *big.Int
 	if len(privateKeyInfo.PublicKey.Bytes) > 0 {
-		x, y = curve.Unmarshal(privateKeyInfo.PublicKey.Bytes)
+		x, y = curve.DecompressPoint(privateKeyInfo.PublicKey.Bytes)
 	} else {
-		// Calcular chave pública a partir da chave privada
+		// Calcular chave pública a partir da chave privada e comprimir
 		curveSize := (curve.BitSize + 7) / 8
 		x, y = curve.ScalarBaseMult(littleIntToBytes(D, curveSize))
 	}
