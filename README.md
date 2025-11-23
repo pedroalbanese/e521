@@ -8,7 +8,7 @@
 #### ITI DOC-ICP-01.01 — Brazilian Cryptographic Standards for Public-Key Algorithms  
 Brazil's national public key cryptographic standards are defined in the **DOC-ICP-01.01**, issued by the **Instituto Nacional de Tecnologia da Informação (ITI)** under the **ICP-Brasil** framework. This standard mandates the use of internationally recognized and security-reviewed asymmetric algorithms, including:
 
-- **ECC over Curve E-521**, defined as a high-security elliptic curve consistent with 512-bit security strength, considered for future-safe digital signatures mechanism.
+- **ECC over Curve E-521**, defined as a high-security elliptic curve consistent with 256-bit security strength, considered for future-safe digital signatures mechanism.
 
 This algorithm is officially approved through the **Instrução Normativa ITI nº 22, de 23 de março de 2022**, which consolidates and updates the cryptographic requirements under Brazilian law, ensuring strong digital security for certificates and signatures in national electronic documents and transactions.
 
