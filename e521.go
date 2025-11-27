@@ -68,19 +68,23 @@ var e521Curve *Curve
 
 // Parâmetros da curva E-521 (Edwards)
 var (
-	// p = 2^521 - 1
-	e521P, _ = new(big.Int).SetString("1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16)
-	
-	// Ordem do grupo
-	e521N, _ = new(big.Int).SetString("7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd15b6c64746fc85f736b8af5e7ec53f04fbd8c4569a8f1f4540ea2435f5180d6b", 16)
-	
-	// Coeficiente d da curva de Edwards
-	e521D, _ = new(big.Int).SetString("1fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa4331", 16)
-	
-	// Ponto gerador
-	e521Gx, _ = new(big.Int).SetString("752cb45c48648b189df90cb2296b2878a3bfd9f42fc6c818ec8bf3c9c0c6203913f6ecc5ccc72434b1ae949d568fc99c6059d0fb13364838aa302a940a2f19ba6c", 16)
-	e521Gy    = big.NewInt(0x0c)
-	
+	// Prime field p
+	e521P, _ = new(big.Int).SetString(
+		"6864797660130609714981900799081393217269435300143305409394463459185543183397656052122559640661454554977296311391480858037121987999716643812574028291115057151", 10)
+
+	// Group order n
+	e521N, _ = new(big.Int).SetString(
+		"1716199415032652428745475199770348304317358825035826352348615864796385795849413675475876651663657849636693659065234142604319282948702542317993421293670108523", 10)
+
+	// Edwards curve coefficient d
+	e521D, _ = new(big.Int).SetString(
+		"-376014", 10)
+
+	// Generator point G
+	e521Gx, _ = new(big.Int).SetString(
+		"1571054894184995387535939749894317568645297350402905821437625181152304994381188529632591196067604100772673927915114267193389905003276673749012051148356041324", 10)
+	e521Gy = big.NewInt(12)
+
 	// Co-factor
 	e521H = big.NewInt(4)
 )
