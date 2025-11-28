@@ -728,3 +728,73 @@ func NewPublicKey(x, y *big.Int) *PublicKey {
 		Curve: curve,
 	}
 }
+
+// ProveKnowledge gera uma prova ZKP não-interativa (protocolo Sigma)
+// demonstrando conhecimento da chave privada, sem revelá-la.
+func (priv *PrivateKey) ProveKnowledge() ([]byte, error) {
+	curve := priv.Curve
+	byteLen := (curve.BitSize + 7) / 8
+
+	// 1. Compromisso R = r*G (gera valor aleatório r e computa r·G)
+	r, err := randLittleInt(rand.Reader, curve.N)
+	if err != nil {
+		return nil, err
+	}
+	Rx, Ry := curve.ScalarBaseMult(littleIntToBytes(r, byteLen))
+	RComp := curve.CompressPoint(Rx, Ry)
+
+	// 2. Desafio c = H(R || A) usando Fiat–Shamir
+	//    A é a chave pública
+	AComp := curve.CompressPoint(priv.X, priv.Y)
+	input := append(RComp, AComp...)
+	cBytes := hashE521(0x00, []byte{}, input)
+	c := bytesToLittleInt(cBytes[:byteLen])
+	c.Mod(c, curve.N)
+
+	// 3. Resposta: s = r + c * a  (mod N)
+	//    onde a é a chave privada
+	s := new(big.Int).Mul(c, priv.D)
+	s.Add(s, r)
+	s.Mod(s, curve.N)
+
+	// 4. Prova final = R || s
+	sBytes := littleIntToBytes(s, byteLen)
+	proof := append(RComp, sBytes...)
+	return proof, nil
+}
+
+// VerifyKnowledge verifica a prova ZKP não-interativa de conhecimento da chave privada
+func (pub *PublicKey) VerifyKnowledge(proof []byte) bool {
+	curve := pub.Curve
+	byteLen := (curve.BitSize + 7) / 8
+
+	// Prova deve conter: R || s
+	if len(proof) != 2*byteLen {
+		return false
+	}
+
+	RComp := proof[:byteLen]
+	sBytes := proof[byteLen:]
+	s := bytesToLittleInt(sBytes)
+
+	// 1. Decomprime o compromisso R
+	Rx, Ry := curve.DecompressPoint(RComp)
+	if Rx == nil || Ry == nil {
+		return false
+	}
+
+	// 2. Recalcula c = H(R || A) (Fiat–Shamir)
+	AComp := curve.CompressPoint(pub.X, pub.Y)
+	input := append(RComp, AComp...)
+	cBytes := hashE521(0x00, []byte{}, input)
+	c := bytesToLittleInt(cBytes[:byteLen])
+	c.Mod(c, curve.N)
+
+	// 3. Verificação: s*G == R + c*A
+	sGx, sGy := curve.ScalarBaseMult(littleIntToBytes(s, byteLen))
+	cAx, cAy := curve.ScalarMult(pub.X, pub.Y, littleIntToBytes(c, byteLen))
+	RpluscAx, RpluscAy := curve.Add(Rx, Ry, cAx, cAy)
+
+	// Compara pontos em tempo constante
+	return constantTimeEqual(sGx, RpluscAx) && constantTimeEqual(sGy, RpluscAy)
+}
