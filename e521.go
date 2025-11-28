@@ -732,7 +732,12 @@ func NewPublicKey(x, y *big.Int) *PublicKey {
 // ProveKnowledge gera uma prova ZKP não-interativa (protocolo Sigma)
 // demonstrando conhecimento da chave privada, sem revelá-la.
 func (priv *PrivateKey) ProveKnowledge() ([]byte, error) {
-	curve := priv.Curve
+	curve := priv.curve
+	if curve == nil {
+		curve = E521()
+		priv.curve = curve
+	}
+
 	byteLen := (curve.BitSize + 7) / 8
 
 	// 1. Compromisso R = r*G (gera valor aleatório r e computa r·G)
@@ -743,21 +748,22 @@ func (priv *PrivateKey) ProveKnowledge() ([]byte, error) {
 	Rx, Ry := curve.ScalarBaseMult(littleIntToBytes(r, byteLen))
 	RComp := curve.CompressPoint(Rx, Ry)
 
-	// 2. Desafio c = H(R || A) usando Fiat–Shamir
-	//    A é a chave pública
-	AComp := curve.CompressPoint(priv.X, priv.Y)
+	// 2. Obter chave pública A
+	pub := priv.GetPublic()
+	AComp := curve.CompressPoint(pub.X, pub.Y)
+
+	// 3. Desafio c = H(R || A) usando Fiat–Shamir
 	input := append(RComp, AComp...)
 	cBytes := hashE521(0x00, []byte{}, input)
 	c := bytesToLittleInt(cBytes[:byteLen])
 	c.Mod(c, curve.N)
 
-	// 3. Resposta: s = r + c * a  (mod N)
-	//    onde a é a chave privada
+	// 4. Resposta: s = r + c * a  (mod N)
 	s := new(big.Int).Mul(c, priv.D)
 	s.Add(s, r)
 	s.Mod(s, curve.N)
 
-	// 4. Prova final = R || s
+	// 5. Prova final = R || s
 	sBytes := littleIntToBytes(s, byteLen)
 	proof := append(RComp, sBytes...)
 	return proof, nil
