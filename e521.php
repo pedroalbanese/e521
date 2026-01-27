@@ -4,14 +4,14 @@
  * Brazilian Ed521 Algorithm Implementation in Pure PHP using BCMath
  * 
  * Implementation of the Brazilian Ed521 digital signature algorithm
- * based on Twisted Edwards curves over prime fields.
+ * based on Pure Edwards curves over prime fields.
  * 
  * Reference Implementation for ALBANESE Research Lab
  * Developed by Pedro F. Albanese - ALBANESE Research Lab
  * 
  * @author Pedro F. Albanese <pedro.albanese@albaneseresearchlab.com>
  * @copyright ALBANESE Research Lab
- * @license MIT
+ * @license ISC
  * @version 1.0.0
  */
 
