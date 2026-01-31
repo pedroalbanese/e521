@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Brazilian Ed521 Algorithm Implementation in Pure PHP using BCMath
+ * Brazilian Ed521 Algorithm Implementation in Pure PHP using GMP
  * 
  * Implementation of the Brazilian Ed521 digital signature algorithm
  * based on Pure Edwards curves over prime fields.
