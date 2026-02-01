@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Brazilian Ed521 Algorithm Implementation in Pure PHP using GMP
+ * Brazilian Ed521 Algorithm Implementation in Pure PHP using BCMath
  * 
  * Implementation of the Brazilian Ed521 digital signature algorithm
  * based on Pure Edwards curves over prime fields.
@@ -242,33 +242,135 @@ function random_bytes_bc($length) {
  */
 /**
  * SHAKE256 implementation following golang.org/x/crypto/sha3
- * Using GMP for 64-bit operations - CORRECTED VERSION
+ * Using BCMath for 64-bit operations - CORRECTED VERSION
  */
 
-// Check for GMP extension
-if (!extension_loaded('gmp')) {
-    die("GMP extension is required. Please install: sudo apt-get install php-gmp\n");
+// Check for BCMath extension
+if (!extension_loaded('bcmath')) {
+    die("BCMath extension is required. Please install: sudo apt-get install php-bcmath\n");
 }
 
 // Constants
 define('SHAKE256_rate', 136); // 1088 bits = 136 bytes
-$mask64 = gmp_init('0xFFFFFFFFFFFFFFFF');
+$mask64 = "18446744073709551615"; // 0xFFFFFFFFFFFFFFFF
 
-// Round constants as GMP integers (FIPS 202)
-$RC = [
-    gmp_init('0x0000000000000001'), gmp_init('0x0000000000008082'),
-    gmp_init('0x800000000000808A'), gmp_init('0x8000000080008000'),
-    gmp_init('0x000000000000808B'), gmp_init('0x0000000080000001'),
-    gmp_init('0x8000000080008081'), gmp_init('0x8000000000008009'),
-    gmp_init('0x000000000000008A'), gmp_init('0x0000000000000088'),
-    gmp_init('0x0000000080008009'), gmp_init('0x000000008000000A'),
-    gmp_init('0x000000008000808B'), gmp_init('0x800000000000008B'),
-    gmp_init('0x8000000000008089'), gmp_init('0x8000000000008003'),
-    gmp_init('0x8000000000008002'), gmp_init('0x8000000000000080'),
-    gmp_init('0x000000000000800A'), gmp_init('0x800000008000000A'),
-    gmp_init('0x8000000080008081'), gmp_init('0x8000000000008080'),
-    gmp_init('0x0000000080000001'), gmp_init('0x8000000080008008')
+// Helper function to convert hex to BCMath decimal string
+function hex2dec($hex) {
+    $hex = str_replace('0x', '', $hex);
+    $dec = '0';
+    $len = strlen($hex);
+    
+    for ($i = 0; $i < $len; $i++) {
+        $char = $hex[$len - 1 - $i];
+        $val = hexdec($char);
+        $dec = bcadd($dec, bcmul($val, bcpow('16', $i)));
+    }
+    
+    return $dec;
+}
+
+// Helper functions for BCMath operations
+function bc_and($x, $y) {
+    // BCMath doesn't have bitwise AND, we need to implement it
+    $result = "0";
+    $x = trim($x);
+    $y = trim($y);
+    
+    $bit = "1";
+    while (bccomp($x, "0") > 0 || bccomp($y, "0") > 0) {
+        $x_bit = bcmod($x, "2");
+        $y_bit = bcmod($y, "2");
+        
+        if (bccomp($x_bit, "1") == 0 && bccomp($y_bit, "1") == 0) {
+            $result = bcadd($result, $bit);
+        }
+        
+        $x = bcdiv($x, "2", 0);
+        $y = bcdiv($y, "2", 0);
+        $bit = bcmul($bit, "2");
+    }
+    return $result;
+}
+
+function bc_or($x, $y) {
+    $x = trim($x);
+    $y = trim($y);
+    $result = "0";
+    $bit = "1";
+    
+    while (bccomp($x, "0") > 0 || bccomp($y, "0") > 0) {
+        $x_bit = bcmod($x, "2");
+        $y_bit = bcmod($y, "2");
+        
+        if (bccomp($x_bit, "1") == 0 || bccomp($y_bit, "1") == 0) {
+            $result = bcadd($result, $bit);
+        }
+        
+        $x = bcdiv($x, "2", 0);
+        $y = bcdiv($y, "2", 0);
+        $bit = bcmul($bit, "2");
+    }
+    return $result;
+}
+
+function bc_xor($x, $y) {
+    $x = trim($x);
+    $y = trim($y);
+    $result = "0";
+    $bit = "1";
+    
+    while (bccomp($x, "0") > 0 || bccomp($y, "0") > 0) {
+        $x_bit = bcmod($x, "2");
+        $y_bit = bcmod($y, "2");
+        
+        if ((bccomp($x_bit, "1") == 0 && bccomp($y_bit, "0") == 0) ||
+            (bccomp($x_bit, "0") == 0 && bccomp($y_bit, "1") == 0)) {
+            $result = bcadd($result, $bit);
+        }
+        
+        $x = bcdiv($x, "2", 0);
+        $y = bcdiv($y, "2", 0);
+        $bit = bcmul($bit, "2");
+    }
+    return $result;
+}
+
+function bc_not($x) {
+    global $mask64;
+    return bc_xor($x, $mask64);
+}
+
+function bc_shift_left($x, $bits) {
+    // Left shift for BCMath
+    return bcmul($x, bcpow("2", $bits));
+}
+
+function bc_shift_right($x, $bits) {
+    // Right shift for BCMath
+    return bcdiv($x, bcpow("2", $bits), 0);
+}
+
+// Round constants as hex strings (FIPS 202)
+$RC_hex = [
+    '0x0000000000000001', '0x0000000000008082',
+    '0x800000000000808A', '0x8000000080008000',
+    '0x000000000000808B', '0x0000000080000001',
+    '0x8000000080008081', '0x8000000000008009',
+    '0x000000000000008A', '0x0000000000000088',
+    '0x0000000080008009', '0x000000008000000A',
+    '0x000000008000808B', '0x800000000000008B',
+    '0x8000000000008089', '0x8000000000008003',
+    '0x8000000000008002', '0x8000000000000080',
+    '0x000000000000800A', '0x800000008000000A',
+    '0x8000000080008081', '0x8000000000008080',
+    '0x0000000080000001', '0x8000000080008008'
 ];
+
+// Convert to BCMath decimal strings
+$RC = [];
+foreach ($RC_hex as $hex) {
+    $RC[] = hex2dec($hex);
+}
 
 // Rotation offsets
 $rotc = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44];
@@ -277,53 +379,54 @@ $rotc = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 
 $piln = [10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1];
 
 // ===================================================================
-// Core Keccak functions
+// Core Keccak functions using BCMath
 // ===================================================================
 
 /**
- * Rotate left 64-bit GMP number
+ * Rotate left 64-bit BCMath number
  */
 function rotl64($x, $k) {
     global $mask64;
     $k = $k % 64;
     if ($k == 0) return $x;
     
-    $left = gmp_and(gmp_mul($x, gmp_pow(2, $k)), $mask64);
-    $right = gmp_and(gmp_div_q($x, gmp_pow(2, 64 - $k)), $mask64);
-    return gmp_or($left, $right);
+    $x = bc_and($x, $mask64);
+    $left = bc_and(bc_shift_left($x, $k), $mask64);
+    $right = bc_and(bc_shift_right($x, 64 - $k), $mask64);
+    return bc_or($left, $right);
 }
 
 /**
- * Keccak-f[1600] permutation
+ * Keccak-f[1600] permutation using BCMath
  */
 function keccakF1600(&$state) {
     global $RC, $rotc, $piln, $mask64;
     
     for ($round = 0; $round < 24; $round++) {
         // θ step
-        $c0 = gmp_xor($state[0], gmp_xor($state[5], gmp_xor($state[10], gmp_xor($state[15], $state[20]))));
-        $c1 = gmp_xor($state[1], gmp_xor($state[6], gmp_xor($state[11], gmp_xor($state[16], $state[21]))));
-        $c2 = gmp_xor($state[2], gmp_xor($state[7], gmp_xor($state[12], gmp_xor($state[17], $state[22]))));
-        $c3 = gmp_xor($state[3], gmp_xor($state[8], gmp_xor($state[13], gmp_xor($state[18], $state[23]))));
-        $c4 = gmp_xor($state[4], gmp_xor($state[9], gmp_xor($state[14], gmp_xor($state[19], $state[24]))));
+        $c0 = bc_xor($state[0], bc_xor($state[5], bc_xor($state[10], bc_xor($state[15], $state[20]))));
+        $c1 = bc_xor($state[1], bc_xor($state[6], bc_xor($state[11], bc_xor($state[16], $state[21]))));
+        $c2 = bc_xor($state[2], bc_xor($state[7], bc_xor($state[12], bc_xor($state[17], $state[22]))));
+        $c3 = bc_xor($state[3], bc_xor($state[8], bc_xor($state[13], bc_xor($state[18], $state[23]))));
+        $c4 = bc_xor($state[4], bc_xor($state[9], bc_xor($state[14], bc_xor($state[19], $state[24]))));
 
-        $d0 = gmp_xor(rotl64($c1, 1), $c4);
-        $d1 = gmp_xor(rotl64($c2, 1), $c0);
-        $d2 = gmp_xor(rotl64($c3, 1), $c1);
-        $d3 = gmp_xor(rotl64($c4, 1), $c2);
-        $d4 = gmp_xor(rotl64($c0, 1), $c3);
+        $d0 = bc_xor(rotl64($c1, 1), $c4);
+        $d1 = bc_xor(rotl64($c2, 1), $c0);
+        $d2 = bc_xor(rotl64($c3, 1), $c1);
+        $d3 = bc_xor(rotl64($c4, 1), $c2);
+        $d4 = bc_xor(rotl64($c0, 1), $c3);
 
         // Apply θ to all lanes
         for ($i = 0; $i < 25; $i += 5) {
-            $state[$i] = gmp_and(gmp_xor($state[$i], $d0), $mask64);
-            $state[$i + 1] = gmp_and(gmp_xor($state[$i + 1], $d1), $mask64);
-            $state[$i + 2] = gmp_and(gmp_xor($state[$i + 2], $d2), $mask64);
-            $state[$i + 3] = gmp_and(gmp_xor($state[$i + 3], $d3), $mask64);
-            $state[$i + 4] = gmp_and(gmp_xor($state[$i + 4], $d4), $mask64);
+            $state[$i] = bc_and(bc_xor($state[$i], $d0), $mask64);
+            $state[$i + 1] = bc_and(bc_xor($state[$i + 1], $d1), $mask64);
+            $state[$i + 2] = bc_and(bc_xor($state[$i + 2], $d2), $mask64);
+            $state[$i + 3] = bc_and(bc_xor($state[$i + 3], $d3), $mask64);
+            $state[$i + 4] = bc_and(bc_xor($state[$i + 4], $d4), $mask64);
         }
 
         // ρ and π steps
-        $b = array_fill(0, 25, gmp_init(0));
+        $b = array_fill(0, 25, "0");
         $current = $state[1];
         
         for ($i = 0; $i < 24; $i++) {
@@ -340,30 +443,30 @@ function keccakF1600(&$state) {
             $t3 = $b[$y + 3];
             $t4 = $b[$y + 4];
 
-            $not_t1 = gmp_xor($t1, $mask64);
-            $not_t2 = gmp_xor($t2, $mask64);
-            $not_t3 = gmp_xor($t3, $mask64);
-            $not_t4 = gmp_xor($t4, $mask64);
-            $not_t0 = gmp_xor($t0, $mask64);
+            $not_t1 = bc_not($t1);
+            $not_t2 = bc_not($t2);
+            $not_t3 = bc_not($t3);
+            $not_t4 = bc_not($t4);
+            $not_t0 = bc_not($t0);
 
-            $state[$y] = gmp_and(gmp_xor($t0, gmp_and($not_t1, $t2)), $mask64);
-            $state[$y + 1] = gmp_and(gmp_xor($t1, gmp_and($not_t2, $t3)), $mask64);
-            $state[$y + 2] = gmp_and(gmp_xor($t2, gmp_and($not_t3, $t4)), $mask64);
-            $state[$y + 3] = gmp_and(gmp_xor($t3, gmp_and($not_t4, $t0)), $mask64);
-            $state[$y + 4] = gmp_and(gmp_xor($t4, gmp_and($not_t0, $t1)), $mask64);
+            $state[$y] = bc_and(bc_xor($t0, bc_and($not_t1, $t2)), $mask64);
+            $state[$y + 1] = bc_and(bc_xor($t1, bc_and($not_t2, $t3)), $mask64);
+            $state[$y + 2] = bc_and(bc_xor($t2, bc_and($not_t3, $t4)), $mask64);
+            $state[$y + 3] = bc_and(bc_xor($t3, bc_and($not_t4, $t0)), $mask64);
+            $state[$y + 4] = bc_and(bc_xor($t4, bc_and($not_t0, $t1)), $mask64);
         }
 
         // ι step
-        $state[0] = gmp_and(gmp_xor($state[0], $RC[$round]), $mask64);
+        $state[0] = bc_and(bc_xor($state[0], $RC[$round]), $mask64);
     }
 }
 
 // ===================================================================
-// SHAKE256 implementation
+// SHAKE256 implementation using BCMath
 // ===================================================================
 
 /**
- * SHAKE256 hash function
+ * SHAKE256 hash function using BCMath
  */
 function shake256($input, $outputLength) {
     global $mask64;
@@ -372,7 +475,7 @@ function shake256($input, $outputLength) {
     $dsbyte = 0x1F; // SHAKE domain separator
     
     // Initialize state
-    $state = array_fill(0, 25, gmp_init(0));
+    $state = array_fill(0, 25, "0");
     $buffer = array_fill(0, $rate, 0);
     $bufPos = 0;
     
@@ -395,12 +498,12 @@ function shake256($input, $outputLength) {
         if ($bufPos == $rate) {
             // XOR buffer into state (little-endian)
             for ($i = 0; $i < $rate; $i += 8) {
-                $word = gmp_init(0);
+                $word = "0";
                 for ($j = 0; $j < 8 && ($i + $j) < $rate; $j++) {
                     $byte = $buffer[$i + $j];
-                    $word = gmp_or($word, gmp_mul($byte, gmp_pow(2, $j * 8)));
+                    $word = bcadd($word, bcmul($byte, bcpow("2", $j * 8)));
                 }
-                $state[$i / 8] = gmp_and(gmp_xor($state[$i / 8], $word), $mask64);
+                $state[$i / 8] = bc_and(bc_xor($state[$i / 8], $word), $mask64);
             }
             
             keccakF1600($state);
@@ -415,12 +518,12 @@ function shake256($input, $outputLength) {
     
     // XOR final block into state
     for ($i = 0; $i < $rate; $i += 8) {
-        $word = gmp_init(0);
+        $word = "0";
         for ($j = 0; $j < 8 && ($i + $j) < $rate; $j++) {
             $byte = $buffer[$i + $j];
-            $word = gmp_or($word, gmp_mul($byte, gmp_pow(2, $j * 8)));
+            $word = bcadd($word, bcmul($byte, bcpow("2", $j * 8)));
         }
-        $state[$i / 8] = gmp_and(gmp_xor($state[$i / 8], $word), $mask64);
+        $state[$i / 8] = bc_and(bc_xor($state[$i / 8], $word), $mask64);
     }
     
     keccakF1600($state);
@@ -436,8 +539,9 @@ function shake256($input, $outputLength) {
             $posInLane = $i % 8;
             
             // Extract byte from lane (little-endian)
-            $byte = gmp_and(gmp_div_q($state[$lane], gmp_pow(2, $posInLane * 8)), 0xFF);
-            $output .= chr(gmp_intval($byte));
+            $shifted = bcdiv($state[$lane], bcpow("2", $posInLane * 8));
+            $byte = bcmod($shifted, "256");
+            $output .= chr(intval($byte));
             $bytesExtracted++;
         }
         
