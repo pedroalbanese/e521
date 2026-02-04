@@ -482,32 +482,24 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	curveSize := (curve.BitSize + 7) / 8
 	dBytes := littleIntToBytes(priv.D, curveSize)
 	
-	// Criar estrutura PrivateKeyInfo conforme PKCS#8 para EdDSA
-	// A chave privada é um OCTET STRING contendo apenas o escalar
+	// Codificar a chave privada como OCTET STRING
+	privateKeyOctet, err := asn1.Marshal(dBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal private key octet: %w", err)
+	}
+	
+	// Criar estrutura PrivateKeyInfo conforme PKCS#8
 	privateKeyInfo := struct {
 		Version             int
 		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          asn1.RawValue `asn1:"tag:0,explicit,optional"`
+		PrivateKey          []byte `asn1:"tag:4"` // OCTET STRING
 	}{
 		Version: 0,
 		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
 			Algorithm:  oidE521EdDSA,
 			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
-	}
-	
-	// Marshal do escalar privado como OCTET STRING
-	privateKeyBytes, err := asn1.Marshal(asn1.RawValue{
-		Tag:   asn1.TagOctetString,
-		Bytes: dBytes,
-	})
-	if err != nil {
-		return nil, err
-	}
-	
-	privateKeyInfo.PrivateKey = asn1.RawValue{
-		Tag:   asn1.TagOctetString,
-		Bytes: privateKeyBytes,
+		PrivateKey: privateKeyOctet,
 	}
 	
 	// Marshal da estrutura completa
@@ -519,12 +511,16 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	var privateKeyInfo struct {
 		Version             int
 		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          asn1.RawValue `asn1:"tag:0,explicit,optional"`
+		PrivateKey          asn1.RawValue
 	}
 	
-	_, err := asn1.Unmarshal(der, &privateKeyInfo)
+	rest, err := asn1.Unmarshal(der, &privateKeyInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal private key info: %w", err)
+	}
+	
+	if len(rest) > 0 {
+		return nil, errors.New("trailing data after private key")
 	}
 	
 	// Verificar OID
@@ -532,21 +528,27 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 		return nil, errors.New("unsupported curve OID")
 	}
 	
-	// Desempacotar o OCTET STRING que contém a chave privada
-	var privateKeyOctet asn1.RawValue
-	_, err = asn1.Unmarshal(privateKeyInfo.PrivateKey.Bytes, &privateKeyOctet)
-	if err != nil {
-		return nil, err
+	// Verificar que a chave privada é um OCTET STRING
+	if privateKeyInfo.PrivateKey.Tag != asn1.TagOctetString {
+		return nil, fmt.Errorf("expected OCTET STRING for private key, got tag %d", privateKeyInfo.PrivateKey.Tag)
 	}
 	
-	if privateKeyOctet.Tag != asn1.TagOctetString {
-		return nil, errors.New("expected OCTET STRING for private key")
+	// Desempacotar o OCTET STRING
+	var dBytes []byte
+	_, err = asn1.Unmarshal(privateKeyInfo.PrivateKey.Bytes, &dBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal private key octet: %w", err)
 	}
 	
 	curve := E521()
 	
 	// Extrair chave privada D (little-endian)
-	D := bytesToLittleInt(privateKeyOctet.Bytes)
+	D := bytesToLittleInt(dBytes)
+	
+	// Verificar se a chave está dentro dos limites
+	if D.Cmp(curve.N) >= 0 || D.Sign() == 0 {
+		return nil, errors.New("invalid private key scalar")
+	}
 	
 	return &PrivateKey{
 		D:     D,
