@@ -482,24 +482,24 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	curveSize := (curve.BitSize + 7) / 8
 	dBytes := littleIntToBytes(priv.D, curveSize)
 	
-	// Codificar a chave privada como OCTET STRING
-	privateKeyOctet, err := asn1.Marshal(dBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal private key octet: %w", err)
-	}
-	
 	// Criar estrutura PrivateKeyInfo conforme PKCS#8
+	// Formato simples: PrivateKeyInfo ::= SEQUENCE {
+	//   version Version,
+	//   privateKeyAlgorithm PrivateKeyAlgorithmIdentifier,
+	//   privateKey PrivateKey
+	// }
+	// PrivateKey ::= OCTET STRING
 	privateKeyInfo := struct {
 		Version             int
 		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          []byte `asn1:"tag:4"` // OCTET STRING
+		PrivateKey          []byte
 	}{
 		Version: 0,
 		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
 			Algorithm:  oidE521EdDSA,
 			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
-		PrivateKey: privateKeyOctet,
+		PrivateKey: dBytes,
 	}
 	
 	// Marshal da estrutura completa
@@ -511,16 +511,12 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 	var privateKeyInfo struct {
 		Version             int
 		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          asn1.RawValue
+		PrivateKey          []byte
 	}
 	
-	rest, err := asn1.Unmarshal(der, &privateKeyInfo)
+	_, err := asn1.Unmarshal(der, &privateKeyInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal private key info: %w", err)
-	}
-	
-	if len(rest) > 0 {
-		return nil, errors.New("trailing data after private key")
+		return nil, err
 	}
 	
 	// Verificar OID
@@ -528,27 +524,10 @@ func ParsePrivateKey(der []byte) (*PrivateKey, error) {
 		return nil, errors.New("unsupported curve OID")
 	}
 	
-	// Verificar que a chave privada é um OCTET STRING
-	if privateKeyInfo.PrivateKey.Tag != asn1.TagOctetString {
-		return nil, fmt.Errorf("expected OCTET STRING for private key, got tag %d", privateKeyInfo.PrivateKey.Tag)
-	}
-	
-	// Desempacotar o OCTET STRING
-	var dBytes []byte
-	_, err = asn1.Unmarshal(privateKeyInfo.PrivateKey.Bytes, &dBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal private key octet: %w", err)
-	}
-	
 	curve := E521()
 	
 	// Extrair chave privada D (little-endian)
-	D := bytesToLittleInt(dBytes)
-	
-	// Verificar se a chave está dentro dos limites
-	if D.Cmp(curve.N) >= 0 || D.Sign() == 0 {
-		return nil, errors.New("invalid private key scalar")
-	}
+	D := bytesToLittleInt(privateKeyInfo.PrivateKey)
 	
 	return &PrivateKey{
 		D:     D,
