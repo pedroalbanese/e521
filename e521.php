@@ -233,10 +233,6 @@ function random_bytes_bc($length) {
 // ====================================================================
 
 /**
- * SHAKE256 implementation - versão simplificada para compatibilidade
- * Usando SHA-512 com um padrão que deve dar o mesmo resultado do Python
- */
-/**
  * SHAKE256 implementation following golang.org/x/crypto/sha3
  * Using BCMath for 64-bit operations - CORRECTED VERSION
  */
