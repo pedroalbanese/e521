@@ -214,18 +214,17 @@ function little_int_to_bytes($n, $length) {
  * Generate cryptographically secure random bytes
  */
 function random_bytes_bc($length) {
+    // Se random_bytes existir, use ele (PHP 7+)
     if (function_exists('random_bytes')) {
         return random_bytes($length);
     }
-    
-    if (function_exists('openssl_random_pseudo_bytes')) {
-        return openssl_random_pseudo_bytes($length);
-    }
-    
+
+    // Fallback seguro para PHP <7, usando random_int
     $bytes = '';
     for ($i = 0; $i < $length; $i++) {
         $bytes .= chr(random_int(0, 255));
     }
+
     return $bytes;
 }
 
