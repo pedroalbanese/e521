@@ -410,67 +410,6 @@ func ParsePublicKey(der []byte) (*PublicKey, error) {
 	}, nil
 }
 
-/*
-// MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8 SEM a chave pública
-func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
-	curve := E521()
-	if priv.curve == nil {
-		priv.curve = curve
-	}
-	
-	// Converter apenas a chave privada D para bytes (little-endian)
-	curveSize := (curve.BitSize + 7) / 8
-	dBytes := littleIntToBytes(priv.D, curveSize)
-	
-	// Criar estrutura PrivateKeyInfo SEM a chave pública
-	privateKeyInfo := struct {
-		Version             int
-		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          []byte `asn1:"tag:4"` // OCTET STRING
-	}{
-		Version: 0,
-		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
-			Algorithm:  oidE521EdDSA,
-			Parameters: asn1.RawValue{Tag: asn1.TagOID},
-		},
-		PrivateKey: dBytes,
-	}
-	
-	// Marshal da estrutura
-	return asn1.Marshal(privateKeyInfo)
-}
-
-// ParsePrivateKey analisa uma chave privada no formato PKCS#8
-func ParsePrivateKey(der []byte) (*PrivateKey, error) {
-	var privateKeyInfo struct {
-		Version             int
-		PrivateKeyAlgorithm pkAlgorithmIdentifier
-		PrivateKey          []byte `asn1:"tag:4"`
-		PublicKey           asn1.BitString `asn1:"optional,explicit,tag:1"`
-	}
-	
-	_, err := asn1.Unmarshal(der, &privateKeyInfo)
-	if err != nil {
-		return nil, err
-	}
-	
-	// Verificar OID
-	if !privateKeyInfo.PrivateKeyAlgorithm.Algorithm.Equal(oidE521EdDSA) {
-		return nil, errors.New("unsupported curve OID")
-	}
-	
-	curve := E521()
-	
-	// Extrair chave privada D (little-endian)
-	D := bytesToLittleInt(privateKeyInfo.PrivateKey)
-	
-	return &PrivateKey{
-		D:     D,
-		curve: curve,
-	}, nil
-}
-*/
-
 // MarshalPKCS8PrivateKey serializa uma chave privada no formato PKCS#8
 func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 	curve := E521()
