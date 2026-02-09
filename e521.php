@@ -9,7 +9,7 @@
  * @author Pedro F. Albanese <pedroalbanese@hotmail.com>
  * @copyright ALBANESE Research Lab
  * @license ISC
- * @version 1.0.1
+ * @version 1.0.2
  */
 
 // ====================================================================
