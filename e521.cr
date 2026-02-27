@@ -850,7 +850,7 @@ end
 # ====================================================================
 
 def test_ed521
-  puts "🔬 Testando ED521 (E-521) em Crystal puro"
+  puts "Testando ED521 (E-521) em Crystal puro"
   puts "=" * 70
   
   priv = generate_private_key
@@ -862,28 +862,28 @@ def test_ed521
   if decomp_x && decomp_y && decomp_x == pub_x && decomp_y == pub_y
     puts "2. Compressão/descompressão: OK"
   else
-    puts "2. Compressão/descompressão: ❌"
+    puts "2. Compressão/descompressão: FALHOU"
   end
   
   msg = "Mensagem de teste".to_slice
   sig = sign(priv, msg)
   valid = verify(pub_x, pub_y, msg, sig)
-  puts "3. Assinatura/verificação: #{valid ? "✅" : "❌"}"
+  puts "3. Assinatura/verificação: #{valid ? "VÁLIDO" : "INVÁLIDO"}"
   
   msg2 = "Outra mensagem".to_slice
   valid2 = verify(pub_x, pub_y, msg2, sig)
-  puts "4. Mensagem alterada rejeitada: #{!valid2 ? "✅" : "❌"}"
+  puts "4. Mensagem alterada rejeitada: #{!valid2 ? "VÁLIDO" : "INVÁLIDO"}"
   
   proof = prove_knowledge(priv)
   valid_proof = verify_knowledge(pub_x, pub_y, proof)
-  puts "5. ZKP: #{valid_proof ? "✅" : "❌"}"
+  puts "5. ZKP: #{valid_proof ? "VÁLIDO" : "INVÁLIDO"}"
   
   private_pem = private_key_to_pem(priv)
   public_pem = public_key_to_pem(pub_x, pub_y)
   puts "6. Formatos PEM: OK"
   
   puts "\n" + "=" * 70
-  puts "✅ Testes concluídos"
+  puts "Testes concluídos"
 end
 
 # ====================================================================
