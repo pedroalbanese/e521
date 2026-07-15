@@ -42,14 +42,14 @@ func main() {
 
 	// === 2. Sign a message ===
 	message := []byte("Test message for digital signature")
-	signature, err := privKey.SignASN1Compressed(message)
+	signature, err := privKey.Sign(message)
 	if err != nil {
 		log.Fatalf("Error signing message: %v", err)
 	}
 	fmt.Printf("Generated signature (ASN.1): %x\n", signature)
 
 	// === 3. Verify signature ===
-	isValid := pubKey.VerifyASN1Compressed(message, signature)
+	isValid := pubKey.Verify(message, signature)
 	fmt.Printf("Is signature valid? %v\n", isValid)
 }
 ```
