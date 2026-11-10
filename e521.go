@@ -592,7 +592,7 @@ func (priv *PrivateKey) Sign(message []byte) ([]byte, error) {
 
 	// 2. Calculate r = SHAKE256(prefix || message) mod N
 	rBytes := hashE521(0x00, []byte{}, append(prefix, message...))
-	r := bytesToLittleInt(rBytes[:byteLen])
+	r := bytesToLittleInt(rBytes)
 	r.Mod(r, curve.N)
 
 	// 3. Compute R = r*G and compress
@@ -605,7 +605,7 @@ func (priv *PrivateKey) Sign(message []byte) ([]byte, error) {
 	// 5. Compute h = SHAKE256(dom || R || A || message) mod N
 	hramInput := append(append(RCompressed, ACompressed...), message...)
 	hramHash := hashE521(0x00, []byte{}, hramInput)
-	hram := bytesToLittleInt(hramHash[:byteLen])
+	hram := bytesToLittleInt(hramHash)
 	hram.Mod(hram, curve.N)
 
 	// 6. s = (r + h * a) mod N
@@ -647,7 +647,7 @@ func (pub *PublicKey) Verify(message, sig []byte) bool {
 	// Compute h = SHAKE256(dom || R || A || message) mod N
 	hramInput := append(append(RCompressed, ACompressed...), message...)
 	hramHash := hashE521(0x00, []byte{}, hramInput)
-	hram := bytesToLittleInt(hramHash[:byteLen])
+	hram := bytesToLittleInt(hramHash)
 	hram.Mod(hram, curve.N)
 
 	// Compute s*G
