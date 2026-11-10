@@ -645,7 +645,12 @@ func (pub *PublicKey) Verify(message, sig []byte) bool {
 	ACompressed := curve.CompressPoint(pub.X, pub.Y)
 
 	// Compute h = SHAKE256(dom || R || A || message) mod N
-	hramInput := append(append(RCompressed, ACompressed...), message...)
+	// RCompressed is a slice of sig: append to a new buffer, never to it,
+	// or the bytes of S after it in the caller's signature are overwritten.
+	hramInput := make([]byte, 0, len(RCompressed)+len(ACompressed)+len(message))
+	hramInput = append(hramInput, RCompressed...)
+	hramInput = append(hramInput, ACompressed...)
+	hramInput = append(hramInput, message...)
 	hramHash := hashE521(0x00, []byte{}, hramInput)
 	hram := bytesToLittleInt(hramHash)
 	hram.Mod(hram, curve.N)
@@ -796,7 +801,11 @@ func (pub *PublicKey) VerifyKnowledge(proof []byte) bool {
 
 	// 2. Recalcula c = H(R || A) (Fiat–Shamir)
 	AComp := curve.CompressPoint(pub.X, pub.Y)
-	input := append(RComp, AComp...)
+	// RComp é uma fatia de proof: concatenar em um buffer novo, nunca nela,
+	// ou os bytes de s da prova do chamador são sobrescritos.
+	input := make([]byte, 0, len(RComp)+len(AComp))
+	input = append(input, RComp...)
+	input = append(input, AComp...)
 	cBytes := hashE521(0x00, []byte{}, input)
 	c := bytesToLittleInt(cBytes[:byteLen])
 	c.Mod(c, curve.N)
