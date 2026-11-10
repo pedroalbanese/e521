@@ -145,3 +145,56 @@ func TestITIv7CRLSignature(t *testing.T) {
 		t.Error("v7 verifies a CRL with a byte altered")
 	}
 }
+
+// TestParsePublicKeyITIv7 parses the SubjectPublicKeyInfo of the real ITI v7
+// root. Its AlgorithmIdentifier carries the OID alone, with no parameters.
+func TestParsePublicKeyITIv7(t *testing.T) {
+	cert, want := itiV7(t)
+	var tbs struct {
+		Version   int `asn1:"optional,explicit,default:0,tag:0"`
+		Serial    *big.Int
+		Algorithm pkix.AlgorithmIdentifier
+		Issuer    asn1.RawValue
+		Validity  asn1.RawValue
+		Subject   asn1.RawValue
+		PublicKey asn1.RawValue
+	}
+	if _, err := asn1.Unmarshal(cert.TBS.FullBytes, &tbs); err != nil {
+		t.Fatalf("TBSCertificate DER: %v", err)
+	}
+	got, err := ParsePublicKey(tbs.PublicKey.FullBytes)
+	if err != nil {
+		t.Fatalf("ParsePublicKey of the ITI v7 root's SubjectPublicKeyInfo: %v", err)
+	}
+	if got.X.Cmp(want.X) != 0 || got.Y.Cmp(want.Y) != 0 {
+		t.Fatal("ParsePublicKey returned another point than the root's key")
+	}
+	tbsBytes, sig := cert.TBS.FullBytes, cert.Signature.Bytes
+	if !got.Verify(tbsBytes, sig) {
+		t.Fatal("the parsed key does not verify the root's self-signature")
+	}
+}
+
+// TestMarshalPublicKeyUnchanged keeps the encoder's output as it was: the
+// AlgorithmIdentifier still carries its parameters field, and it parses back.
+func TestMarshalPublicKeyUnchanged(t *testing.T) {
+	_, key := itiV7(t)
+	der, err := key.MarshalPKCS8PublicKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spki struct {
+		Algorithm struct {
+			Algorithm  asn1.ObjectIdentifier
+			Parameters asn1.RawValue
+		}
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(der, &spki); err != nil {
+		t.Fatalf("the encoder's output no longer has a parameters field: %v", err)
+	}
+	back, err := ParsePublicKey(der)
+	if err != nil || back.X.Cmp(key.X) != 0 || back.Y.Cmp(key.Y) != 0 {
+		t.Fatalf("round trip failed: %v", err)
+	}
+}
