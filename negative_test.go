@@ -127,3 +127,47 @@ func TestVerifyRejectsWrongKeyMessageAndLength(t *testing.T) {
 		t.Error("the empty message is not told apart from the one byte message")
 	}
 }
+
+// encodePoint writes y little endian in the curve's octets, with the sign bit
+// of x in the most significant bit of the last octet (RFC 8032 5.2.2).
+func encodePoint(y *big.Int, sign byte) []byte {
+	c := E521()
+	n := (c.BitSize + 7) / 8
+	b := make([]byte, n)
+	for i, v := range y.Bytes() {
+		b[len(y.Bytes())-1-i] = v
+	}
+	b[n-1] |= sign << 7
+	return b
+}
+
+// RFC 8032 5.2.3, decoding, step 1: "If the resulting value is >= p,
+// decoding fails", and step 4: "If x = 0, and x_0 = 1, decoding fails".
+// Neither rule held: y = p and y = p + 1 decoded without reduction, and the
+// sign bit was accepted for x = 0.
+func TestDecompressPointRejectsNonCanonical(t *testing.T) {
+	c := E521()
+	one := big.NewInt(1)
+	minusOne := new(big.Int).Sub(c.P, one)
+	pPlusOne := new(big.Int).Add(c.P, one)
+	for _, tc := range []struct {
+		name string
+		enc  []byte
+	}{
+		{"y = p", encodePoint(c.P, 0)},
+		{"y = p + 1, an alias of y = 1", encodePoint(pPlusOne, 0)},
+		{"y = 1, x = 0 with the sign bit set", encodePoint(one, 1)},
+		{"y = p - 1, x = 0 with the sign bit set", encodePoint(minusOne, 1)},
+	} {
+		if x, y := c.DecompressPoint(tc.enc); x != nil || y != nil {
+			t.Errorf("%s: DecompressPoint accepts it as (%v, %v)", tc.name, x, y)
+		}
+	}
+	// Controls: the canonical encodings of the two points with x = 0 decode.
+	for _, y := range []*big.Int{one, minusOne} {
+		x, got := c.DecompressPoint(encodePoint(y, 0))
+		if x == nil || x.Sign() != 0 || got.Cmp(y) != 0 {
+			t.Errorf("control: y = %v with the sign bit clear does not decode to x = 0", y)
+		}
+	}
+}
