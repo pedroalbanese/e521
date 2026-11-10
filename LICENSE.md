@@ -1,4 +1,5 @@
 Copyright (c) 2025, Pedro F. Albanese pedroalbanese@hotmail.com
+Copyright (c) 2026, Daniel Campos Ramos Capitain_Jack@yahoo.com
 
 Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
