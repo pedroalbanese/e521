@@ -119,7 +119,7 @@ type PrivateKey struct {
 // pkAlgorithmIdentifier para ASN.1
 type pkAlgorithmIdentifier struct {
 	Algorithm  asn1.ObjectIdentifier
-	Parameters asn1.RawValue
+	Parameters asn1.RawValue `asn1:"optional"`
 }
 
 func initE521() {
