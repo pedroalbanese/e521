@@ -535,6 +535,11 @@ func (c *Curve) DecompressPoint(data []byte) (*big.Int, *big.Int) {
 
 	y := bytesToLittleInt(yBytes)
 
+	// RFC 8032 5.2.3, step 1: "If the resulting value is >= p, decoding fails."
+	if y.Cmp(c.P) >= 0 {
+		return nil, nil
+	}
+
 	// Solve for x using Edwards curve equation: x² + y² = 1 + d*x²*y²
 	// Rearranged to: x² = (1 - y²) / (1 - d*y²)
 	y2 := new(big.Int).Mul(y, y)
@@ -562,6 +567,11 @@ func (c *Curve) DecompressPoint(data []byte) (*big.Int, *big.Int) {
 	// Calculate square root
 	x := new(big.Int).ModSqrt(x2, c.P)
 	if x == nil {
+		return nil, nil
+	}
+
+	// RFC 8032 5.2.3, step 4: "If x = 0, and x_0 = 1, decoding fails."
+	if x.Sign() == 0 && signBit == 1 {
 		return nil, nil
 	}
 
