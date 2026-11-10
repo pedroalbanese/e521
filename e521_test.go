@@ -95,3 +95,54 @@ func TestSignVerifiedByIndependentOracle(t *testing.T) {
 		t.Error("Verify rejects the signature Sign made")
 	}
 }
+
+// Verify and VerifyKnowledge read the caller's signature or proof and must
+// leave it as it was: R is a slice of it, and appending to R wrote over S.
+func TestVerifyLeavesSignatureAndMessageUnchanged(t *testing.T) {
+	d, _ := new(big.Int).SetString(testScalar, 16)
+	priv := &PrivateKey{D: d, curve: E521()}
+	pub := priv.GetPublic()
+	msg := []byte("abc")
+	sig, err := priv.Sign(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both a slice with spare capacity (as Sign returns) and one with none.
+	for name, s := range map[string][]byte{
+		"returned by Sign": sig,
+		"exact capacity":   append(make([]byte, 0, len(sig)), sig...),
+	} {
+		before := append([]byte(nil), s...)
+		msgBefore := append([]byte(nil), msg...)
+		for i := 1; i <= 2; i++ {
+			if !pub.Verify(msg, s) {
+				t.Errorf("%s: Verify number %d rejects a valid signature", name, i)
+			}
+			if !bytes.Equal(s, before) {
+				t.Errorf("%s: Verify number %d changed the signature\n got %x\nwant %x", name, i, s, before)
+			}
+		}
+		if !bytes.Equal(msg, msgBefore) {
+			t.Errorf("%s: Verify changed the message", name)
+		}
+	}
+}
+
+func TestVerifyKnowledgeLeavesProofUnchanged(t *testing.T) {
+	d, _ := new(big.Int).SetString(testScalar, 16)
+	priv := &PrivateKey{D: d, curve: E521()}
+	pub := priv.GetPublic()
+	proof, err := priv.ProveKnowledge()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := append([]byte(nil), proof...)
+	for i := 1; i <= 2; i++ {
+		if !pub.VerifyKnowledge(proof) {
+			t.Errorf("VerifyKnowledge number %d rejects a valid proof", i)
+		}
+		if !bytes.Equal(proof, before) {
+			t.Errorf("VerifyKnowledge number %d changed the proof", i)
+		}
+	}
+}
