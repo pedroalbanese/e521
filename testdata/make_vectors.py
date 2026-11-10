@@ -4,6 +4,8 @@
 """Write the JSON vector files of the tests from the independent oracle.
 
     python3 make_vectors.py negative > ed521-negative.json
+    python3 make_vectors.py pure > ed521-pure.json
+    python3 make_vectors.py ph > ed521-ph.json
 
 The oracle (oracle.py) follows RFC 8032 section 5.2 and ITI DOC-ICP-01.01
 section 2 and shares no code with the Go package. The keys come from public
@@ -80,8 +82,42 @@ def negative():
             'seeds': [k.hex() for k in keys], 'signatures': vectors, 'keys': keyvectors}
 
 
+def pure():
+    """PureEd521: phflag 0, empty context, the message signed as it is (DOC-ICP-01.01 2)."""
+    keys = [seed(n) for n in range(3)]
+    vectors = []
+    for number, size in [(0, s) for s in (0, 1, 2, 11, 64, 65, 66, 67, 131, 132, 133, 256, 1023)] + [(1, 41), (2, 41)]:
+        data = message(size, number if size == 41 else 0)
+        public, signature = C.public_key(keys[number]), C.sign(keys[number], data)
+        assert C.verify(public, data, signature), (number, size)
+        vectors.append({'name': f'pure-key{number}-{size}-octets', 'public': public.hex(),
+                        'message': data.hex(), 'signature': signature.hex()})
+    return {'comment': 'PureEd521 vectors from testdata/oracle.py; public TEST seeds, never real keys.',
+            'seeds': [k.hex() for k in keys], 'vectors': vectors}
+
+
+def ph():
+    """Ed521ph: phflag 1 and PH = SHAKE256(x, 64) or SHA3-512 (DOC-ICP-01.01 2.2), dom5 with a context (2.3)."""
+    key = seed(0)
+    public = C.public_key(key)
+    prehashes = {'SHAKE256-64': lambda m: hashlib.shake_256(m).digest(64), 'SHA3-512': lambda m: hashlib.sha3_512(m).digest()}
+    vectors = []
+    for kind, function in prehashes.items():
+        for size in (0, 3, 100):
+            for label, context in (('empty', b''), ('foo', b'foo'), ('255', bytes(range(255)))):
+                data = message(size, 3)
+                signature = C.sign(key, function(data), context=context, phflag=1)
+                assert C.verify(public, function(data), signature, context=context, phflag=1)
+                assert not C.verify(public, function(data), signature, context=context, phflag=0)
+                assert not C.verify(public, data, signature, context=context, phflag=1)
+                vectors.append({'name': f'ph-{kind}-{size}-octets-context-{label}', 'prehash': kind, 'public': public.hex(),
+                                'context': context.hex(), 'message': data.hex(), 'signature': signature.hex()})
+    return {'comment': 'Ed521ph vectors from testdata/oracle.py; public TEST seed, never a real key. The signed message is PH(message).',
+            'seeds': [key.hex()], 'vectors': vectors}
+
+
 if __name__ == '__main__':
-    modes = {'negative': negative}
+    modes = {'negative': negative, 'pure': pure, 'ph': ph}
     if len(sys.argv) != 2 or sys.argv[1] not in modes:
         sys.exit('usage: make_vectors.py ' + '|'.join(modes))
     print(json.dumps(modes[sys.argv[1]](), indent=1))
