@@ -1,12 +1,14 @@
 <?php
 
 /**
- * Brazilian Ed521 Algorithm Implementation in Pure PHP using GMP
+ * Brazilian Ed521 (E-521) — Pure PHP implementation using GMP
  *
  * Byte-compatible with the Go implementation at
  * github.com/pedroalbanese/e521.
  *
  * Requires the GMP extension (php-gmp).
+ * Uses PHP's native hash('shake256') when available (PHP 8.1+);
+ * otherwise falls back to a pure GMP SHAKE256.
  *
  * @author Pedro F. Albanese <pedroalbanese@hotmail.com>
  * @copyright ALBANESE Research Lab
@@ -19,7 +21,7 @@ if (!extension_loaded('gmp')) {
 }
 
 // ====================================================================
-// E-521 Curve Parameters
+// E-521 curve parameters
 // ====================================================================
 define('P', gmp_init('6864797660130609714981900799081393217269435300143305409394463459185543183397656052122559640661454554977296311391480858037121987999716643812574028291115057151', 10));
 define('N', gmp_init('1716199415032652428745475199770348304317358825035826352348615864796385795849413675475876651663657849636693659065234142604319282948702542317993421293670108523', 10));
@@ -30,17 +32,12 @@ define('GY', gmp_init('12', 10));
 define('BIT_SIZE', 521);
 define('BYTE_LEN', 66);
 
-// OID 1.3.6.1.4.1.44588.2.1
+// OID 1.3.6.1.4.1.44588.2.1 (DER-encoded content, without tag/length)
 define('OID_DER', "\x06\x0a\x2b\x06\x01\x04\x01\x82\xdc\x2c\x02\x01");
 
 // ====================================================================
 // GMP helpers
 // ====================================================================
-function gadd($a, $b) { return gmp_add($a, $b); }
-function gsub($a, $b) { return gmp_sub($a, $b); }
-function gmul($a, $b) { return gmp_mul($a, $b); }
-function gmod($a, $m) { return gmp_mod($a, $m); }
-
 function gaddmod($a, $b, $m) { return gmp_mod(gmp_add($a, $b), $m); }
 function gsubmod($a, $b, $m) { return gmp_mod(gmp_add(gmp_sub($a, $b), $m), $m); }
 function gmulmod($a, $b, $m) { return gmp_mod(gmp_mul($a, $b), $m); }
@@ -50,19 +47,15 @@ function ginvmod($a, $m) {
     return $inv === false ? gmp_init(0) : $inv;
 }
 
-function gpowmod($b, $e, $m) { return gmp_powm($b, $e, $m); }
-
-function gcmp($a, $b) { return gmp_cmp($a, $b); }
-function geq($a, $b)  { return gmp_cmp($a, $b) === 0; }
+function geq($a, $b) { return gmp_cmp($a, $b) === 0; }
 
 // ====================================================================
-// Byte helpers
+// Byte helpers (little-endian)
 // ====================================================================
 function bytes_to_little_int($b) {
     $len = strlen($b);
     if ($len === 0) return gmp_init(0);
-    $rev = strrev($b);
-    return gmp_import($rev, 1, GMP_MSW_FIRST | GMP_BIG_ENDIAN);
+    return gmp_import(strrev($b), 1, GMP_MSW_FIRST | GMP_BIG_ENDIAN);
 }
 
 function little_int_to_bytes($n, $length) {
@@ -81,8 +74,6 @@ function little_int_to_bytes($n, $length) {
     return strrev($be);
 }
 
-function bytes_to_hex($b) { return bin2hex($b); }
-
 function hex_to_bytes_strict($h) {
     $h = preg_replace('/\s+/', '', $h);
     if (strlen($h) % 2 !== 0) throw new Exception("odd hex length");
@@ -95,10 +86,6 @@ function random_bytes_gmp($length) {
     $out = '';
     for ($i = 0; $i < $length; $i++) $out .= chr(random_int(0, 255));
     return $out;
-}
-
-function gmp_hex($n) {
-    return gmp_strval($n, 16);
 }
 
 // ====================================================================
@@ -115,7 +102,7 @@ function shake256($input, $outputLength) {
                 return $out;
             }
         } catch (Throwable $e) {
-            // fall through
+            // fall through to GMP
         }
     }
     return _shake256_gmp($input, $outputLength);
@@ -167,7 +154,6 @@ function _shake256_gmp($input, $outputLength) {
 }
 
 function _shake_absorb(&$state, &$buffer, $rate) {
-    $pow = gmp_init(1);
     $b256 = gmp_init(256);
     for ($i = 0; $i < $rate; $i += 8) {
         $word = gmp_init(0);
@@ -260,7 +246,7 @@ function _keccak_f1600(&$state) {
 }
 
 // ====================================================================
-// Curve operations
+// Curve operations (Edwards form, Go-compatible)
 // ====================================================================
 function is_on_curve($x, $y) {
     $x2 = gmulmod($x, $x, P);
@@ -272,7 +258,7 @@ function is_on_curve($x, $y) {
 }
 
 function add_points($x1, $y1, $x2, $y2) {
-    // Go treats (0,0) as neutral
+    // Go treats (0,0) as neutral (non-canonical)
     if (gmp_sign($x1) === 0 && gmp_sign($y1) === 0) return [$x2, $y2];
     if (gmp_sign($x2) === 0 && gmp_sign($y2) === 0) return [$x1, $y1];
 
@@ -316,7 +302,7 @@ function scalar_mult($x, $y, $k_bytes) {
 function scalar_base_mult($k_bytes) { return scalar_mult(GX, GY, $k_bytes); }
 
 // ====================================================================
-// Compress / decompress
+// Compress / decompress (RFC 8032 style)
 // ====================================================================
 function compress_point($x, $y) {
     $y_bytes = little_int_to_bytes($y, BYTE_LEN);
@@ -331,6 +317,7 @@ function compress_point($x, $y) {
 function sqrt_mod_p($a) {
     $a = gmp_mod($a, P);
     if (gmp_sign($a) === 0) return gmp_init(0);
+    // E-521: p = 2^521 - 1 ≡ 7 (mod 8), so x = a^((p+1)/4) mod p
     $exp = gmp_div_q(gmp_add(P, gmp_init(1)), gmp_init(4));
     $x = gmp_powm($a, $exp, P);
     if (geq(gmulmod($x, $x, P), $a)) return $x;
@@ -380,7 +367,7 @@ function hash_e521($phflag, $context, $x) {
 // Key generation, sign, verify (Go-compatible: D used directly)
 // ====================================================================
 function rand_little_int($max) {
-    $bits = gmp_strlen(gmp_strval($max, 2));
+    $bits = strlen(gmp_strval($max, 2));
     $byte_len = (int)(($bits + 7) / 8);
     while (true) {
         $buf = random_bytes_gmp($byte_len);
@@ -399,7 +386,7 @@ function sign($priv, $message) {
     // 1. prefix = SHAKE256(dom5 || D_le, 132)
     $prefix = hash_e521(0x00, '', little_int_to_bytes($priv, BYTE_LEN));
 
-    // 2. r = SHAKE256(dom5 || prefix || message, 132) mod N — ALL 132 bytes
+    // 2. r = SHAKE256(dom5 || prefix || message, 132) mod N — all 132 bytes
     $r_bytes = hash_e521(0x00, '', $prefix . $message);
     $r = gmp_mod(bytes_to_little_int($r_bytes), N);
 
@@ -411,7 +398,7 @@ function sign($priv, $message) {
     list($Ax, $Ay) = scalar_base_mult(little_int_to_bytes($priv, BYTE_LEN));
     $A_comp = compress_point($Ax, $Ay);
 
-    // 5. h = SHAKE256(dom5 || R || A || message, 132) mod N — ALL 132 bytes
+    // 5. h = SHAKE256(dom5 || R || A || message, 132) mod N — all 132 bytes
     $h_hash = hash_e521(0x00, '', $R_comp . $A_comp . $message);
     $h = gmp_mod(bytes_to_little_int($h_hash), N);
 
@@ -443,7 +430,7 @@ function verify($pub_x, $pub_y, $message, $signature) {
 }
 
 // ====================================================================
-// ZKP (Go-compatible, with 66-byte truncation for c)
+// ZKP (Go-compatible: c truncated to 66 bytes here, unlike sign/verify)
 // ====================================================================
 function prove_knowledge($priv) {
     $r = rand_little_int(N);
@@ -489,8 +476,10 @@ function der_len($n) {
     while ($n > 0) { $b = chr($n & 0xFF) . $b; $n >>= 8; }
     return chr(0x80 | strlen($b)) . $b;
 }
-function der_seq($content)       { return "\x30" . der_len(strlen($content)) . $content; }
-function der_octet_string($b)    { return "\x04" . der_len(strlen($b)) . $b; }
+
+function der_seq($content)    { return "\x30" . der_len(strlen($content)) . $content; }
+function der_octet_string($b) { return "\x04" . der_len(strlen($b)) . $b; }
+
 function der_int($n) {
     if ($n === 0) return "\x02\x01\x00";
     $b = '';
@@ -498,17 +487,21 @@ function der_int($n) {
     if (ord($b[0]) & 0x80) $b = "\x00" . $b;
     return "\x02" . der_len(strlen($b)) . $b;
 }
+
 function der_bit_string($b, $unused = 0) {
     $content = chr($unused) . $b;
     return "\x03" . der_len(strlen($content)) . $content;
 }
+
 function der_read_tlv($data, $idx) {
     if ($idx >= strlen($data)) throw new Exception("DER: unexpected end");
     $tag = ord($data[$idx]); $idx++;
+    if ($idx >= strlen($data)) throw new Exception("DER: unexpected end (length)");
     $first = ord($data[$idx]); $idx++;
     if ($first & 0x80) {
         $n = $first & 0x7F;
         if ($n === 0) throw new Exception("DER: indefinite length");
+        if ($idx + $n > strlen($data)) throw new Exception("DER: truncated length");
         $length = 0;
         for ($i = 0; $i < $n; $i++) $length = ($length << 8) | ord($data[$idx + $i]);
         $idx += $n;
@@ -521,7 +514,7 @@ function der_read_tlv($data, $idx) {
 }
 
 // ====================================================================
-// PKCS#8 private & SPKI public (Go-compatible Parameters = 06 00)
+// PKCS#8 private / SPKI public (Go-compatible: Parameters = 06 00)
 // ====================================================================
 function private_key_to_pem($priv) {
     $priv_bytes = little_int_to_bytes($priv, BYTE_LEN);
@@ -583,8 +576,8 @@ function read_private_key_from_pem($path) {
 
     list($tag, $key_bytes, $idx) = der_read_tlv($content, $idx);
     if ($tag !== 0x04) throw new Exception("PKCS#8: expected OCTET STRING");
-
     if (strlen($key_bytes) !== BYTE_LEN) throw new Exception("PKCS#8: unexpected key length");
+
     return bytes_to_little_int($key_bytes);
 }
 
@@ -599,8 +592,8 @@ function read_public_key_from_pem($path) {
 
     list($tag, $bs, $idx) = der_read_tlv($content, $idx);
     if ($tag !== 0x03) throw new Exception("SPKI: expected BIT STRING");
-
     if (strlen($bs) < 1) throw new Exception("SPKI: empty BIT STRING");
+
     $unused = ord($bs[0]);
     if ($unused !== 0) throw new Exception("SPKI: unsupported unused bits ($unused)");
 
@@ -646,7 +639,7 @@ function test_shake256() {
 }
 
 // ====================================================================
-// CURUPIRA BLOCK CIPHER (unchanged; works on int, no GMP needed)
+// CURUPIRA block cipher (unchanged; operates on ints)
 // ====================================================================
 class KeySizeError extends Exception {
     public function __construct($size) {
@@ -898,6 +891,7 @@ function pad_pkcs7($data, $bs) {
     if ($pad == 0) $pad = $bs;
     return $data . str_repeat(chr($pad), $pad);
 }
+
 function unpad_pkcs7($data) {
     if (strlen($data) == 0) throw new Exception("Empty data");
     $pad = ord($data[strlen($data) - 1]);
@@ -992,7 +986,7 @@ function decrypt_private_key_pem($pem_data, $password) {
 }
 
 // ====================================================================
-// PEM serializer/parser for E-521 keys
+// PEM serializer / parser for E-521 keys (with optional encryption)
 // ====================================================================
 function ed521_private_to_pem_pkcs8($priv, $password = null) {
     $priv_bytes = little_int_to_bytes($priv, BYTE_LEN);
@@ -1068,14 +1062,14 @@ function usage() {
     echo "ED521 — E-521 pure EdDSA (Go-compatible, PHP/GMP)\n\n";
     echo "Usage: php " . basename(__FILE__) . " <command> [options]\n\n";
     echo "Commands:\n";
-    echo "  test                       Run core self-tests\n";
-    echo "  test-shake                 Print SHAKE256 vectors\n";
-    echo "  generate [--password] [--output FILE]  Generate key pair\n";
-    echo "  sign <priv.pem> <msgfile>  Sign a message, print hex\n";
-    echo "  verify <pub.pem> <msgfile> <sig_hex>   Verify\n";
-    echo "  prove <priv.pem>           ZKP of knowledge\n";
-    echo "  verify-proof <pub.pem> <proof_hex>     Verify ZKP\n";
-    echo "  parse <keyfile> [--debug]  Dump key\n";
+    echo "  test                                Run core self-tests\n";
+    echo "  test-shake                          Print SHAKE256 vectors\n";
+    echo "  generate [--password] [--output F]  Generate a key pair\n";
+    echo "  sign <priv.pem> <msgfile>           Sign a message (hex output)\n";
+    echo "  verify <pub.pem> <msgfile> <sig>    Verify a signature\n";
+    echo "  prove <priv.pem>                    ZKP of knowledge (hex output)\n";
+    echo "  verify-proof <pub.pem> <proof>      Verify a ZKP\n";
+    echo "  parse <keyfile> [--debug]           Dump key info\n";
 }
 
 function cli_main() {
@@ -1097,7 +1091,7 @@ function cli_main() {
             $output = null;
             for ($i = 2; $i < $argc; $i++) {
                 if ($argv[$i] === '--password') {
-                    echo "Senha: ";
+                    echo "Password: ";
                     system('stty -echo');
                     $password = trim(fgets(STDIN));
                     system('stty echo');
