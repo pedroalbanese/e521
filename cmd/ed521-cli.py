@@ -1417,67 +1417,62 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Ed521 signatures (ICP-Brasil Standard)
-  python %(prog)s ed521 gen --priv ed521_priv.pem --pub ed521_pub.pem [--password "mypass"]
-  python %(prog)s ed521 sign --priv ed521_priv.pem --msg document.txt
-  python %(prog)s ed521 verify --pub ed521_pub.pem --msg document.txt --sig SIGNATURE_HEX
-  python %(prog)s ed521 prove --priv ed521_priv.pem
-  python %(prog)s ed521 verify-proof --pub ed521_pub.pem --proof-file ed521_proof.bin
-  python %(prog)s ed521 test
-  python %(prog)s ed521 parse key.pem [--debug]
+  python %(prog)s gen --priv ed521_priv.pem --pub ed521_pub.pem [--password "mypass"]
+  python %(prog)s sign --priv ed521_priv.pem --msg document.txt
+  python %(prog)s verify --pub ed521_pub.pem --msg document.txt --sig SIGNATURE_HEX
+  python %(prog)s prove --priv ed521_priv.pem
+  python %(prog)s verify-proof --pub ed521_pub.pem --proof-file ed521_proof.bin
+  python %(prog)s test
+  python %(prog)s parse key.pem [--debug]
         """
     )
 
-    sub = parser.add_subparsers(dest="tool", title="Tools", required=True)
+    sub = parser.add_subparsers(dest="cmd", title="Commands", required=True)
 
-    ed521 = sub.add_parser("ed521", help="Ed521 signatures (521-bit curve)")
-    ed521sub = ed521.add_subparsers(dest="cmd", required=True)
-
-    ed521_gen = ed521sub.add_parser("gen", help="Generate Ed521 keys")
+    ed521_gen = sub.add_parser("gen", help="Generate Ed521 keys")
     ed521_gen.add_argument("--priv", default="ed521_private.pem", help="Private key PEM")
     ed521_gen.add_argument("--pub", default="ed521_public.pem", help="Public key PEM")
     ed521_gen.add_argument("--password", help="Password to encrypt private key (optional)")
 
-    ed521_sign = ed521sub.add_parser("sign", help="Sign with Ed521")
+    ed521_sign = sub.add_parser("sign", help="Sign with Ed521")
     ed521_sign.add_argument("--priv", required=True, help="Private key PEM")
     ed521_sign.add_argument("--msg", required=True, help="Message file")
 
-    ed521_ver = ed521sub.add_parser("verify", help="Verify Ed521 signature")
+    ed521_ver = sub.add_parser("verify", help="Verify Ed521 signature")
     ed521_ver.add_argument("--pub", required=True, help="Public key PEM")
     ed521_ver.add_argument("--msg", required=True, help="Message file")
     ed521_ver.add_argument("--sig", required=True, help="Signature hex")
 
-    ed521_prove = ed521sub.add_parser("prove", help="Generate ZKP proof of private key knowledge")
+    ed521_prove = sub.add_parser("prove", help="Generate ZKP proof of private key knowledge")
     ed521_prove.add_argument("--priv", required=True, help="Private key file")
 
-    ed521_verify_proof = ed521sub.add_parser("verify-proof", help="Verify ZKP proof")
+    ed521_verify_proof = sub.add_parser("verify-proof", help="Verify ZKP proof")
     ed521_verify_proof.add_argument("--pub", required=True, help="Public key file")
     ed521_verify_proof.add_argument("--proof", help="Proof in hex to verify")
     ed521_verify_proof.add_argument("--proof-file", help="Proof file (takes precedence over --proof)")
 
-    ed521_parse = ed521sub.add_parser("parse", help="Parse Ed521 key file and display info")
+    ed521_parse = sub.add_parser("parse", help="Parse Ed521 key file and display info")
     ed521_parse.add_argument("key_file", help="PEM key file to parse")
     ed521_parse.add_argument("--debug", action="store_true", help="Debug output")
 
-    ed521_test_cmd = ed521sub.add_parser("test", help="Test Ed521 implementation")
+    ed521_test_cmd = sub.add_parser("test", help="Test Ed521 implementation")
 
     args = parser.parse_args()
 
-    if args.tool == "ed521":
-        if args.cmd == "gen":
-            ed521_generate(args.priv, args.pub, args.password)
-        elif args.cmd == "sign":
-            ed521_sign_file(args.priv, args.msg)
-        elif args.cmd == "verify":
-            ed521_verify_file(args.pub, args.msg, args.sig)
-        elif args.cmd == "prove":
-            ed521_prove_command(args.priv)
-        elif args.cmd == "verify-proof":
-            ed521_verify_proof_command(args.pub, args.proof, args.proof_file)
-        elif args.cmd == "test":
-            ed521_test_command()
-        elif args.cmd == "parse":
-            ed521_parse_key(args.key_file, args.debug)
+    if args.cmd == "gen":
+        ed521_generate(args.priv, args.pub, args.password)
+    elif args.cmd == "sign":
+        ed521_sign_file(args.priv, args.msg)
+    elif args.cmd == "verify":
+        ed521_verify_file(args.pub, args.msg, args.sig)
+    elif args.cmd == "prove":
+        ed521_prove_command(args.priv)
+    elif args.cmd == "verify-proof":
+        ed521_verify_proof_command(args.pub, args.proof, args.proof_file)
+    elif args.cmd == "test":
+        ed521_test_command()
+    elif args.cmd == "parse":
+        ed521_parse_key(args.key_file, args.debug)
 
 
 if __name__ == "__main__":
