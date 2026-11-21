@@ -175,26 +175,125 @@ func TestParsePublicKeyITIv7(t *testing.T) {
 	}
 }
 
-// TestMarshalPublicKeyUnchanged keeps the encoder's output as it was: the
-// AlgorithmIdentifier still carries its parameters field, and it parses back.
-func TestMarshalPublicKeyUnchanged(t *testing.T) {
-	_, key := itiV7(t)
+// TestMarshalPublicKeyAsITIv7 checks that the encoder writes a public key the
+// way the real ITI v7 root carries its own: the root's key, marshalled, is the
+// SubjectPublicKeyInfo of the root's certificate, octet for octet. Its
+// AlgorithmIdentifier holds the OID alone, with no parameters field.
+func TestMarshalPublicKeyAsITIv7(t *testing.T) {
+	cert, key := itiV7(t)
+	var tbs struct {
+		Version   int `asn1:"optional,explicit,default:0,tag:0"`
+		Serial    *big.Int
+		Algorithm pkix.AlgorithmIdentifier
+		Issuer    asn1.RawValue
+		Validity  asn1.RawValue
+		Subject   asn1.RawValue
+		PublicKey asn1.RawValue
+	}
+	if _, err := asn1.Unmarshal(cert.TBS.FullBytes, &tbs); err != nil {
+		t.Fatalf("TBSCertificate DER: %v", err)
+	}
 	der, err := key.MarshalPKCS8PublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var spki struct {
-		Algorithm struct {
-			Algorithm  asn1.ObjectIdentifier
-			Parameters asn1.RawValue
-		}
-		PublicKey asn1.BitString
-	}
-	if _, err := asn1.Unmarshal(der, &spki); err != nil {
-		t.Fatalf("the encoder's output no longer has a parameters field: %v", err)
+	if !bytes.Equal(der, tbs.PublicKey.FullBytes) {
+		t.Fatalf("MarshalPKCS8PublicKey wrote\n%x\nthe ITI v7 root has\n%x", der, tbs.PublicKey.FullBytes)
 	}
 	back, err := ParsePublicKey(der)
 	if err != nil || back.X.Cmp(key.X) != 0 || back.Y.Cmp(key.Y) != 0 {
 		t.Fatalf("round trip failed: %v", err)
+	}
+}
+
+// TestMarshalPrivateKeyHasNoParameters checks the same for a private key: the
+// AlgorithmIdentifier of its PKCS #8 form holds the OID alone, and the key
+// parses back.
+func TestMarshalPrivateKeyHasNoParameters(t *testing.T) {
+	priv, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := priv.MarshalPKCS8PrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Version   int
+		Algorithm struct {
+			Algorithm  asn1.ObjectIdentifier
+			Parameters asn1.RawValue `asn1:"optional"`
+		}
+		PrivateKey []byte
+	}
+	if rest, err := asn1.Unmarshal(der, &info); err != nil || len(rest) != 0 {
+		t.Fatalf("PrivateKeyInfo DER: %v (%d bytes left)", err, len(rest))
+	}
+	if len(info.Algorithm.Parameters.FullBytes) != 0 {
+		t.Fatalf("the private key's AlgorithmIdentifier has a parameters field: %x", info.Algorithm.Parameters.FullBytes)
+	}
+	back, err := ParsePrivateKey(der)
+	if err != nil || back.D.Cmp(priv.D) != 0 {
+		t.Fatalf("round trip failed: %v", err)
+	}
+}
+
+// TestParseKeysWrittenWithParameters checks that keys written before v0.1.3,
+// whose AlgorithmIdentifier carried an empty parameters field (06 00), are
+// still read, so that key files people already have keep working.
+func TestParseKeysWrittenWithParameters(t *testing.T) {
+	type oldAlgorithm struct {
+		Algorithm  asn1.ObjectIdentifier
+		Parameters asn1.RawValue
+	}
+	old := oldAlgorithm{Algorithm: oidE521EdDSA, Parameters: asn1.RawValue{Tag: asn1.TagOID}}
+
+	_, key := itiV7(t)
+	compressed := E521().CompressPoint(key.X, key.Y)
+	der, err := asn1.Marshal(struct {
+		Algorithm oldAlgorithm
+		PublicKey asn1.BitString
+	}{old, asn1.BitString{Bytes: compressed, BitLength: len(compressed) * 8}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(der, []byte{0x06, 0x00}) {
+		t.Fatalf("the old public key form was not built: %x", der)
+	}
+	pub, err := ParsePublicKey(der)
+	if err != nil || pub.X.Cmp(key.X) != 0 || pub.Y.Cmp(key.Y) != 0 {
+		t.Fatalf("a public key written with the parameters field is not read: %v", err)
+	}
+
+	priv, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, err := priv.MarshalPKCS8PrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Version   int
+		Algorithm struct {
+			Algorithm  asn1.ObjectIdentifier
+			Parameters asn1.RawValue `asn1:"optional"`
+		}
+		PrivateKey []byte
+	}
+	if _, err := asn1.Unmarshal(now, &info); err != nil {
+		t.Fatal(err)
+	}
+	der, err = asn1.Marshal(struct {
+		Version    int
+		Algorithm  oldAlgorithm
+		PrivateKey []byte
+	}{0, old, info.PrivateKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := ParsePrivateKey(der)
+	if err != nil || back.D.Cmp(priv.D) != 0 {
+		t.Fatalf("a private key written with the parameters field is not read: %v", err)
 	}
 }
