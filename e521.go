@@ -362,7 +362,6 @@ func (pub *PublicKey) MarshalPKCS8PublicKey() ([]byte, error) {
 	}{
 		Algorithm: pkAlgorithmIdentifier{
 			Algorithm:  oidE521EdDSA,
-			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
 		PublicKey: asn1.BitString{Bytes: compressedPubKey, BitLength: len(compressedPubKey) * 8},
 	}
@@ -436,7 +435,6 @@ func (priv *PrivateKey) MarshalPKCS8PrivateKey() ([]byte, error) {
 		Version: 0,
 		PrivateKeyAlgorithm: pkAlgorithmIdentifier{
 			Algorithm:  oidE521EdDSA,
-			Parameters: asn1.RawValue{Tag: asn1.TagOID},
 		},
 		PrivateKey: dBytes,
 	}
