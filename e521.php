@@ -518,7 +518,7 @@ function der_read_tlv($data, $idx) {
 // ====================================================================
 function private_key_to_pem($priv) {
     $priv_bytes = little_int_to_bytes($priv, BYTE_LEN);
-    $alg_id = der_seq(OID_DER . "\x06\x00");
+    $alg_id = der_seq(OID_DER);
     $version = der_int(0);
     $priv_field = der_octet_string($priv_bytes);
     $pkcs8 = der_seq($version . $alg_id . $priv_field);
@@ -532,7 +532,7 @@ function private_key_to_pem($priv) {
 
 function public_key_to_pem($pub_x, $pub_y) {
     $compressed = compress_point($pub_x, $pub_y);
-    $alg_id = der_seq(OID_DER . "\x06\x00");
+    $alg_id = der_seq(OID_DER);
     $bit_str = der_bit_string($compressed, 0);
     $spki = der_seq($alg_id . $bit_str);
 
@@ -990,7 +990,7 @@ function decrypt_private_key_pem($pem_data, $password) {
 // ====================================================================
 function ed521_private_to_pem_pkcs8($priv, $password = null) {
     $priv_bytes = little_int_to_bytes($priv, BYTE_LEN);
-    $alg_id = der_seq(OID_DER . "\x06\x00");
+    $alg_id = der_seq(OID_DER);
     $version = der_int(0);
     $priv_field = der_octet_string($priv_bytes);
     $seq = der_seq($version . $alg_id . $priv_field);
@@ -1006,7 +1006,7 @@ function ed521_private_to_pem_pkcs8($priv, $password = null) {
 
 function ed521_public_to_pem($pub_x, $pub_y) {
     $compressed = compress_point($pub_x, $pub_y);
-    $alg_id = der_seq(OID_DER . "\x06\x00");
+    $alg_id = der_seq(OID_DER);
     $bit_str = der_bit_string($compressed, 0);
     $spki = der_seq($alg_id . $bit_str);
 

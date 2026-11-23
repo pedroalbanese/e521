@@ -394,9 +394,8 @@ def der_read_tlv(data: bytes, idx: int) -> Tuple[int, bytes, int]:
 def private_key_to_pem(priv: int) -> str:
     priv_bytes = little_int_to_bytes(priv, BYTE_LEN)
 
-    # AlgorithmIdentifier: SEQUENCE { OID, OID(empty) }
-    #   Parameters = asn1.RawValue{Tag: TagOID} -> 06 00
-    alg_id = der_seq(OID_DER + b'\x06\x00')
+    # AlgorithmIdentifier: SEQUENCE { OID }  -- Parameters ABSENT (RFC 8410)
+    alg_id = der_seq(OID_DER)
 
     version = der_int(0)
     priv_field = der_octet_string(priv_bytes)
@@ -413,7 +412,7 @@ def private_key_to_pem(priv: int) -> str:
 def public_key_to_pem(pub_x: int, pub_y: int) -> str:
     compressed = compress_point(pub_x, pub_y)
 
-    alg_id = der_seq(OID_DER + b'\x06\x00')
+    alg_id = der_seq(OID_DER)
     bit_str = der_bit_string(compressed, 0)
 
     spki = der_seq(alg_id + bit_str)

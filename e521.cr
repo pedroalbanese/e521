@@ -508,9 +508,9 @@ end
 def private_key_to_pem(priv : BigInt) : String
   priv_bytes = little_int_to_bytes(priv, ED521::BYTE_LEN)
 
-  # Go: Parameters = asn1.RawValue{Tag: asn1.TagOID} -> 06 00
+  # Go: Parameters ABSENT (RFC 8410)
   oid_der = Bytes[0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xdc, 0x2c, 0x02, 0x01]
-  algorithm_id = Bytes[0x30, 0x0c] + oid_der + Bytes[0x06, 0x00]
+  algorithm_id = Bytes[0x30, 0x0a] + oid_der
 
   version = Bytes[0x02, 0x01, 0x00]
   priv_field = Bytes[0x04, 0x42] + priv_bytes
@@ -535,7 +535,7 @@ def public_key_to_pem(pub_x : BigInt, pub_y : BigInt) : String
   compressed = compress_point(pub_x, pub_y)
 
   oid_der = Bytes[0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xdc, 0x2c, 0x02, 0x01]
-  algorithm_id = Bytes[0x30, 0x0c] + oid_der + Bytes[0x06, 0x00]
+  algorithm_id = Bytes[0x30, 0x0a] + oid_der
 
   bit_string_data = Bytes[0x00] + compressed
   bit_string = if bit_string_data.size <= 0x7F
