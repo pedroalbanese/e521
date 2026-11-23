@@ -11,7 +11,7 @@ Notes:
   - sign()/verify() consume ALL 132 bytes of SHAKE256 output.
   - prove_knowledge()/verify_knowledge() truncate c to 66 bytes
     (matching the Go code's inconsistency).
-  - PKCS#8 / SPKI use Parameters = 06 00 (empty OID), matching Go.
+  - PKCS#8 / SPKI use Parameters ABSENT (RFC 8410), matching Go after fix.
 """
 
 import argparse
@@ -708,7 +708,7 @@ def ed521_private_to_pem_pkcs8(private_key_int, password=None):
     #   06 00               =  2 bytes
     #   total content       = 14 bytes  →  30 0e
     oid_der = ED521_OID                                # 06 0a <oid value>
-    algorithm_id = b'\x30\x0e' + oid_der + b'\x06\x00'
+    algorithm_id = b'\x30\x0c' + oid_der
 
     version = b'\x02\x01\x00'
     priv_field = b'\x04\x42' + private_bytes           # OCTET STRING, len 66
@@ -731,7 +731,7 @@ def ed521_private_to_pem_pkcs8(private_key_int, password=None):
 def ed521_public_to_pem(public_key_x, public_key_y):
     """Serialize Ed521 public key to SPKI PEM (Go-compatible Parameters = 06 00)."""
     oid_der = ED521_OID
-    algorithm_id = b'\x30\x0e' + oid_der + b'\x06\x00'
+    algorithm_id = b'\x30\x0c' + oid_der
 
     compressed_pub = ed521_compress_point(public_key_x, public_key_y)
     bit_string_data = b'\x00' + compressed_pub
